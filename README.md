@@ -54,6 +54,14 @@ comes from *simulated* days. In a facility it would be learned from each residen
 
 ## Run it
 
+Fastest path on any machine: install, then let the health check tell you what works and print the start command.
+
+```bash
+pip install -r requirements.txt        # Windows on ARM: powershell -ExecutionPolicy Bypass -File setup_windows.ps1
+python nightwatch/check.py             # add --npu once the QNN models are in models/
+python -m pytest -q tests              # 13 tests: escalation rules, camera confirmation, box decoding
+```
+
 Python 3.10+. The server is standard library only; loading a model needs `torch` and `executorch`.
 
 ```bash
