@@ -23,6 +23,7 @@ from typing import Callable
 from features import vector
 
 NIGHT_START, NIGHT_END = 21, 5   # matches the care records' night band (21:00-05:00)
+SEVERITY = {1: "routine", 2: "notable", 3: "escalation"}  # the care team's derived severity scale
 UNUSUAL_ALERT = 0.9              # model score that counts as "unusual for right now"
 SUSTAIN_S = 5                    # ...for this many consecutive seconds (one odd reading is not an alert)
 
@@ -79,6 +80,9 @@ class Alert:
     resolved: str | None = None
     history: list[tuple[str, str]] = field(default_factory=list)
     contact_step: int = 0
+    max_level: int = 0
+    went_outside: bool = False
+    record: dict[str, object] | None = None
 
 
 class Engine:
@@ -201,7 +205,8 @@ class Engine:
     def _outside(self, r: Resident, exit_id: str) -> None:
         ex = self.exits.get(exit_id)
         label = ex.label if ex else exit_id
-        self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
+        a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
+        a.went_outside = True
 
     # ------------------------------------------------------------------ alerts
 
@@ -219,6 +224,7 @@ class Engine:
             a = Alert(self._next_alert, level, title, r.id if r else None, ex.id if ex else None)
             self._next_alert += 1
             self.alerts.append(a)
+            a.max_level = level
             a.history.append((self.stamp(), f"Level {level}: {title}"))
             self.log(f"L{level}", title)
         elif level > a.level or force:
@@ -234,6 +240,7 @@ class Engine:
         if level == a.level and a.history:
             return
         a.level, a.level_since = level, time.time()
+        a.max_level = max(a.max_level, level)
         if level >= 2:
             a.acked_by, a.acked_at = None, None  # a new urgent fact needs a fresh acknowledgement
         a.history.append((self.stamp(), f"Level {level}: {why}"))
@@ -268,9 +275,7 @@ class Engine:
             a = next((x for x in self.alerts if x.id == alert_id), None)
             if a is None or a.resolved:
                 return {"error": "no such open alert"}
-            a.resolved = outcome
-            a.history.append((self.stamp(), f"Resolved: {outcome}"))
-            self.log("resolved", f"Alert #{a.id} resolved: {outcome}")
+            self._close(a, outcome, by_staff=True)
             r = self.residents.get(a.resident or "")
             if r:
                 # Staff walked them back: settled in their room, and staff stay close for a while.
@@ -280,6 +285,40 @@ class Engine:
             if a.exit and a.exit in self.exits:
                 self.exits[a.exit].open = False
             return {"ok": True}
+
+    def _close(self, a: Alert, outcome: str, by_staff: bool) -> None:
+        a.resolved = outcome
+        a.record = self._care_record(a, by_staff)
+        a.history.append((self.stamp(), f"Resolved: {outcome} · severity {a.record['severity']} {a.record['severity_label']}"))
+        self.log("resolved", f"Alert #{a.id} resolved: {outcome} (severity {a.record['severity']} {a.record['severity_label']})")
+
+    def _care_record(self, a: Alert, by_staff: bool) -> dict[str, object]:
+        """Draft entry in the care team's event-record format (taxonomy v2).
+
+        Location is recorded as a type, never a room, and time as a band at night. Affect and the
+        intervention actually used are left for staff to confirm: the system doesn't know them.
+        """
+        night = self.is_night()
+        h = self.clock().hour
+        earlier = sum(1 for x in self.alerts if x.resident == a.resident and x.id != a.id and x.created < a.created)
+        severity = max(a.max_level, 1)
+        return {
+            "resident": a.resident,
+            "category": "Behaviour and distress",
+            "behaviour": "Exit-seeking or wandering" if (a.exit or a.went_outside) else "Restlessness",
+            "affect": "(staff to confirm)",
+            "frequency": "Isolated" if earlier == 0 else "Repeated",
+            "time_of_day": "Night" if night else "Morning" if h < 12 else "Afternoon" if h < 18 else "Evening",
+            "night_band": "Night (21:00-05:00)" if night else None,
+            "location_type": "Exterior (left the building)" if a.went_outside
+                             else "Communal / circulation" if a.exit else "Own room",
+            "trigger": "Night / unsettled" if night else None,
+            "intervention": "(staff to confirm)" if by_staff else "Monitoring",
+            "outcome": "Escalated for clinical review" if severity == 3 else "Managed without further escalation",
+            "severity": severity,
+            "severity_label": SEVERITY[severity],
+            "draft_by": "NightWatch: confirm affect and intervention before filing",
+        }
 
     # ------------------------------------------------------------------ the 1 s loop
 
@@ -304,9 +343,7 @@ class Engine:
                 r = self.residents.get(a.resident or "")
                 if a.level == 1 and r and r.in_bed and not a.exit:
                     # A heads-up clears itself when the resident settles back into bed.
-                    a.resolved = "Settled back in bed on their own"
-                    a.history.append((self.stamp(), "Cleared: back in bed"))
-                    self.log("resolved", f"Alert #{a.id} cleared: {r.name} back in bed")
+                    self._close(a, "Settled back in bed on their own", by_staff=False)
                     continue
                 if a.acked_by:
                     continue
@@ -358,7 +395,8 @@ class Engine:
                 "age_s": round(time.time() - a.created), "acked_by": a.acked_by, "resolved": a.resolved,
                 "escalates_in_s": due, "history": a.history,
                 "description": r.description if r else None, "room": r.room if r else None,
-                "suggestions": r.suggestions()[:2] if r else []}
+                "suggestions": r.suggestions()[:2] if r else [],
+                "max_level": a.max_level, "record": a.record}
 
     # ------------------------------------------------------------------ scripted demo scenarios
 

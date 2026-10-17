@@ -139,6 +139,20 @@ function alertCard(a) {
       <button class="res" data-res="${a.id}">Found safe</button></div></div>`;
 }
 
+const SEV = { 1: ['routine', 'var(--ok)'], 2: ['notable', 'var(--l1)'], 3: ['escalation', 'var(--l3)'] };
+function recordCard(a) {
+  const r = a.record || {};
+  const [label, color] = SEV[r.severity] || ['–', 'var(--muted)'];
+  const fields = ['category', 'behaviour', 'affect', 'frequency', 'time_of_day', 'night_band', 'location_type', 'trigger', 'intervention', 'outcome']
+    .filter((k) => r[k]).map((k) => `<span style="color:var(--muted)">${k.replace(/_/g, ' ')}:</span> ${esc(r[k])}`).join(' · ');
+  return `<div class="alert" style="border-left-color:${color};animation:none;background:#0f141a">
+    <div class="top"><span class="lvl" style="color:${color}">SEVERITY ${r.severity ?? '–'} · ${label.toUpperCase()}</span><span class="due">${esc(a.resident || '')}</span></div>
+    <div class="title">${esc(a.title)}</div>
+    <div class="due">${esc(a.resolved)}</div>
+    <div style="font-size:12px;margin-top:6px">${fields}</div>
+    <div class="due" style="margin-top:4px">${esc(r.draft_by || '')}</div></div>`;
+}
+
 async function post(url, body) {
   await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   tick();
@@ -164,8 +178,8 @@ async function tick() {
   $('visits').textContent = s.stats.visits_today;
   $('ackt').textContent = s.stats.median_ack_s == null ? '–' : `${s.stats.median_ack_s} s`;
   drawMap(s);
-  $('alerts').innerHTML = s.alerts.length ? s.alerts.map(alertCard).join('')
-    : `<div class="none">No active alerts.${s.recent.length ? ` Last: ${esc(s.recent[s.recent.length - 1].title)} (${esc(s.recent[s.recent.length - 1].resolved)})` : ''}</div>`;
+  $('alerts').innerHTML = (s.alerts.length ? s.alerts.map(alertCard).join('') : '<div class="none">No active alerts.</div>')
+    + (s.recent.length ? `<h2 style="margin-top:14px">Closed tonight · draft care records</h2>${s.recent.slice().reverse().map(recordCard).join('')}` : '');
   $('residents').innerHTML = s.residents.map((r) => `<tr>
     <td><b>${esc(r.id)}</b><br><span style="color:var(--muted);font-size:12px">${esc(r.pattern)}</span></td>
     <td>${Math.round(r.risk * 100)}%</td>
