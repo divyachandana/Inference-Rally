@@ -83,6 +83,24 @@ python nightwatch/server.py --model models/normal_pattern_qnn.pte --device NPU
 If a model fails to load, the server says so and keeps watching with a rule fallback; the dashboard always
 shows which model and device are live.
 
+## Hallway camera (person detection on the device)
+
+The strongest signal that someone left their room at night is *seeing* it. `/camera/` opens a webcam in the
+browser and sends frames to the local server, where a person detector (torchvision SSDlite320-MobileNetV3,
+COCO weights) runs through **ExecuTorch**: about 6 ms per frame on a MacBook CPU with XNNPACK, NPU via QNN.
+Frames are analysed in memory and dropped; nothing is recorded or sent anywhere, and the page shows a blurred
+view by default. Three frames in a row with a person confirms it. At night, the hallway camera outside room 12
+means R-07 left their room (heads-up); the front-entrance camera means someone is at the exit (urgent).
+
+```bash
+python nightwatch/vision/export_detector.py --backend xnnpack     # needs torchvision; writes the .pte + anchors
+python nightwatch/server.py --model models/normal_pattern_xnnpack.pte --camera-model models/person_ssdlite_xnnpack.pte
+```
+
+The exported `.pte` and anchors are committed, so the laptop only needs `torch` + `executorch` + `pillow`
+(no torchvision). For the NPU: `python nightwatch/vision/export_detector.py --backend qnn` on an x86_64 host with
+the QNN SDK, then `--camera-model models/person_ssdlite_qnn.pte --camera-device NPU`.
+
 ## Sensors
 
 | Sensor | Demo | Real |

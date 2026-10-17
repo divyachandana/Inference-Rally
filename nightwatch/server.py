@@ -14,11 +14,13 @@ API (JSON):
     POST /api/ack       {"alert": 3, "by": "Night nurse"}
     POST /api/resolve   {"alert": 3, "outcome": "Found safe, walked back"}
     POST /api/clock     {"time": "02:08", "speed": 1}
+    POST /api/frame     {"camera": "hall12", "jpeg": "<base64>"}   (analysed in memory, never stored)
     POST /api/scenario  {"name": "night_elopement" | "night_bathroom" | "day_visits" | "reset"}
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 import threading
@@ -32,6 +34,7 @@ from engine import Engine  # noqa: E402
 from scorer import build  # noqa: E402
 
 ENGINE: Engine
+DETECTOR: object | None = None
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -67,6 +70,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/clock":
                 ENGINE.set_time(str(body["time"]), float(body["speed"]) if "speed" in body else None)
                 out = {"ok": True}
+            elif self.path == "/api/frame":
+                out = _frame(body)
             elif self.path == "/api/scenario":
                 out = ENGINE.run_scenario(str(body.get("name")))
             else:
@@ -85,8 +90,19 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+def _frame(body: dict[str, object]) -> dict[str, object]:
+    """Analyse one camera frame in memory. It is never written to disk or sent anywhere."""
+    if DETECTOR is None:
+        return {"error": "no camera model loaded: start the server with --camera-model"}
+    jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
+    boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
+    del jpeg
+    ENGINE.camera(str(body.get("camera", "hall12")), len(boxes), ms)
+    return {"boxes": boxes, "ms": round(ms, 1), "model": DETECTOR.name, "device": DETECTOR.device}  # type: ignore[attr-defined]
+
+
 def main() -> None:
-    global ENGINE
+    global ENGINE, DETECTOR
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", type=Path, help=".pte normal-pattern model (omit = rule fallback)")
     p.add_argument("--device", default="CPU", help="label for the dashboard: NPU or CPU")
@@ -95,6 +111,8 @@ def main() -> None:
     p.add_argument("--ack-timeout", type=float, default=25, help="seconds a level-2/3 alert waits before escalating")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--lan", action="store_true", help="listen on the local network so staff phones can connect")
+    p.add_argument("--camera-model", type=Path, help="person detector .pte (models/person_ssdlite_*.pte)")
+    p.add_argument("--camera-device", default="CPU", help="label for the dashboard: NPU or CPU")
     args = p.parse_args()
 
     ENGINE = Engine(args.facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
@@ -104,11 +122,17 @@ def main() -> None:
             ENGINE.tick()
             time.sleep(1)
 
+    if args.camera_model:
+        from vision.detector import PersonDetector
+
+        DETECTOR = PersonDetector(args.camera_model, args.camera_model.parent / "person_ssdlite_anchors.pt",
+                                  args.camera_device)
+        print(f"Camera model: {DETECTOR.name} on {DETECTOR.device}")
     threading.Thread(target=loop, daemon=True, name="tick").start()
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     print(f"Scorer: {ENGINE.scorer.name} on {ENGINE.scorer.device}")  # type: ignore[attr-defined]
     print(f"Dashboard http://localhost:{args.port}/dashboard/   Staff http://localhost:{args.port}/staff/   "
-          f"Simulator http://localhost:{args.port}/sim/")
+          f"Simulator http://localhost:{args.port}/sim/   Camera http://localhost:{args.port}/camera/")
     if args.lan:
         print("LAN mode: staff phones on this network can open /staff/ using this computer's IP address.")
     ThreadingHTTPServer((host, args.port), Handler).serve_forever()

@@ -23,7 +23,8 @@ from typing import Callable
 from features import vector
 
 NIGHT_START, NIGHT_END = 21, 5   # matches the care records' night band (21:00-05:00)
-SEVERITY = {1: "routine", 2: "notable", 3: "escalation"}  # the care team's derived severity scale
+SEVERITY = {1: "routine", 2: "notable", 3: "escalation"}
+CAMERA_CONFIRM_FRAMES = 3        # consecutive frames with a person before we believe it (~0.75 s)  # the care team's derived severity scale
 UNUSUAL_ALERT = 0.9              # model score that counts as "unusual for right now"
 SUSTAIN_S = 5                    # ...for this many consecutive seconds (one odd reading is not an alert)
 
@@ -107,6 +108,8 @@ class Engine:
             self.outside_temp_c = spec["outside_temp_c"]
             self.residents = {r["id"]: Resident(**r) for r in spec["residents"]}
             self.exits = {e["id"]: Exit(**e) for e in spec["exits"]}
+            self.cameras = {c["id"]: dict(c, streak=0, persons=0, last_frame=0.0, last_log=0.0) for c in spec.get("cameras", [])}
+            self.camera_latencies: deque[float] = deque(maxlen=300)
             self.alerts: list[Alert] = []
             self.events: deque[dict[str, str]] = deque(maxlen=60)
             self.visits_today = 0
@@ -210,6 +213,33 @@ class Engine:
         label = ex.label if ex else exit_id
         a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
         a.went_outside = True
+
+    def camera(self, cam_id: str, persons: int, ms: float) -> dict[str, object]:
+        """One analysed frame. Only the person count arrives here; the frame itself is already gone."""
+        with self.lock:
+            cam = self.cameras.get(cam_id)
+            if cam is None:
+                return {"error": f"unknown camera {cam_id!r}"}
+            self.camera_latencies.append(ms)
+            cam["persons"], cam["last_frame"] = persons, time.time()
+            cam["streak"] = cam["streak"] + 1 if persons else 0
+            if cam["streak"] != CAMERA_CONFIRM_FRAMES:   # act once, when a person is confirmed
+                return {"ok": True}
+            r = self.residents.get(cam.get("resident") or "")
+            if not self.is_night():
+                if time.time() - cam["last_log"] > 60:
+                    cam["last_log"] = time.time()
+                    self.log("camera", f"{cam['label']}: person seen (day: logged only)")
+                return {"ok": True}
+            if cam["zone"] == "exit":
+                ex = self.exits.get(cam.get("exit") or "")
+                near = r or next((x for x in sorted(self.residents.values(), key=lambda x: -x.wander_risk)
+                                  if not x.in_bed), None)
+                self._raise(2, f"Camera: person at the {cam['label'].replace(' camera', '').lower()} at {self.clock():%H:%M}", near, ex)
+            elif r is not None and r.zone == "room":
+                self.log("camera", f"{cam['label']}: person leaving room {r.room}")
+                self.sensor({"type": "location", "resident": r.id, "zone": cam["zone"]})
+            return {"ok": True}
 
     # ------------------------------------------------------------------ alerts
 
@@ -373,6 +403,10 @@ class Engine:
                            "p50_ms": round(lat[len(lat) // 2], 3) if lat else None,
                            "p95_ms": round(lat[int(len(lat) * 0.95)], 3) if lat else None},
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
+                "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
+                             "live": time.time() - c["last_frame"] < 3} for c in self.cameras.values()],
+                "camera_p50_ms": round(sorted(self.camera_latencies)[len(self.camera_latencies) // 2], 1)
+                                 if self.camera_latencies else None,
                 "residents": [
                     {"id": r.id, "name": r.name, "room": r.room, "risk": r.wander_risk, "in_bed": r.in_bed,
                      "zone": r.zone, "hr": r.hr, "hr_rest": r.hr_rest, "unusual": round(r.unusual, 3),

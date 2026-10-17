@@ -130,5 +130,20 @@
       "x": 190,
       "y": 70
     }
+  ],
+  "cameras": [
+    {
+      "id": "hall12",
+      "label": "Hallway camera outside room 12",
+      "resident": "R-07",
+      "zone": "corridor"
+    },
+    {
+      "id": "front",
+      "label": "Front entrance camera",
+      "resident": null,
+      "zone": "exit",
+      "exit": "front"
+    }
   ]
 }
