@@ -172,6 +172,9 @@ class Engine:
                     if zone != "room":
                         r.motion = max(r.motion, 0.3)  # moving between zones means walking
                     self.log("sensor", f"{r.name} -> {zone}")
+                    if self.is_night() and zone in ("corridor", "common", "exit") and time.time() >= r.quiet_until:
+                        # The rule that matters at night: a resident has left their room.
+                        self._raise(1, f"{r.name} left their room at {self.clock():%H:%M}", r, None)
                     if zone == "outside":
                         self._outside(r, str(ev.get("exit") or r.last_exit or "an exit"))
             else:
