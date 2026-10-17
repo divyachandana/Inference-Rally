@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NightWatch Staff</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --ink:#e6edf3; --muted:#8b949e; --line:#30363d; --l1:#d29922; --l2:#f0883e; --l3:#f85149; --ok:#3fb950; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:16px; }
+  .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .head b { font-size:18px; } .head span { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .start { width:100%; padding:18px; font-size:18px; border:0; border-radius:12px; background:#1f6feb; color:#fff; margin-bottom:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-left:8px solid var(--l1); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .card.l2 { border-left-color:var(--l2); } .card.l3 { border-left-color:var(--l3); background:#2a1213; }
+  .lvl { font-weight:800; font-size:13px; letter-spacing:.04em; }
+  .title { font-size:18px; font-weight:650; margin:6px 0; }
+  .sub { color:var(--muted); font-size:14px; }
+  .tip { color:var(--ok); font-size:14px; margin-top:6px; }
+  .row { display:flex; gap:10px; margin-top:12px; }
+  .row button { flex:1; padding:14px; font-size:16px; font-weight:650; border:0; border-radius:10px; }
+  .ack { background:#58a6ff; color:#04122a; } .res { background:#238636; color:#fff; }
+  .quiet { text-align:center; color:var(--muted); padding:40px 0; }
+</style>
+</head>
+<body>
+<div class="head"><b>NightWatch</b><span id="clock">--:--</span></div>
+<button class="start" id="start">Start shift (enables sound + vibration)</button>
+<div id="list"><div class="quiet">Connecting…</div></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const NAMES = ['', 'Heads-up', 'URGENT', 'EMERGENCY'];
+let audio = null, seen = {};
+
+$('start').onclick = () => { audio = new AudioContext(); $('start').remove(); };
+
+function beep(level) {
+  if (navigator.vibrate) navigator.vibrate(level >= 3 ? [400, 150, 400, 150, 400] : level === 2 ? [300, 100, 300] : [150]);
+  if (!audio) return;
+  const times = level >= 3 ? 4 : level === 2 ? 2 : 1;
+  for (let i = 0; i < times; i++) {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = level >= 3 ? 980 : level === 2 ? 760 : 520;
+    g.gain.value = level === 1 ? 0.05 : 0.2;
+    o.connect(g).connect(audio.destination);
+    o.start(audio.currentTime + i * 0.35); o.stop(audio.currentTime + i * 0.35 + 0.22);
+  }
+}
+
+async function post(url, body) {
+  await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  tick();
+}
+document.addEventListener('click', (e) => {
+  if (e.target.dataset.ack) post('/api/ack', { alert: +e.target.dataset.ack, by: 'Night staff (phone)' });
+  if (e.target.dataset.res) post('/api/resolve', { alert: +e.target.dataset.res, outcome: 'Found safe, returned to room' });
+});
+
+async function tick() {
+  let s;
+  try { s = await (await fetch('/api/state')).json(); } catch { $('list').innerHTML = '<div class="quiet">Server not reachable</div>'; return; }
+  $('clock').textContent = s.clock.slice(0, 5) + (s.night ? ' · night' : ' · day');
+  for (const a of s.alerts) {
+    if ((seen[a.id] || 0) < a.level && !a.acked_by) beep(a.level);
+    seen[a.id] = Math.max(seen[a.id] || 0, a.level);
+  }
+  $('list').innerHTML = s.alerts.length ? s.alerts.map((a) => `
+    <div class="card l${a.level}">
+      <div class="lvl" style="color:var(--l${a.level})">${NAMES[a.level]}${a.acked_by ? ' · you are responding' : a.escalates_in_s != null && a.level < 3 ? ` · escalates in ${a.escalates_in_s}s` : ''}</div>
+      <div class="title">${esc(a.title)}</div>
+      ${a.description ? `<div class="sub">${esc(a.description)} · Room ${esc(a.room)}</div>` : ''}
+      ${a.suggestions[0] ? `<div class="tip">Try: ${esc(a.suggestions[0])}</div>` : ''}
+      <div class="row">${a.acked_by ? '' : `<button class="ack" data-ack="${a.id}">I'm going</button>`}
+        <button class="res" data-res="${a.id}">Found safe</button></div>
+    </div>`).join('') : '<div class="quiet">All quiet.</div>';
+}
+setInterval(tick, 1000); tick();
+</script>
+</body>
+</html>
