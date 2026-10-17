@@ -152,15 +152,16 @@ Not a medical device. It supports staff; it does not replace them.
 
 ## Benchmark
 
-`nightwatch/bench/benchmark.py` compares the model on the Hexagon NPU (QNN) and the CPU (XNNPACK):
-p50/p95/p99 latency, throughput, whole-laptop power above an idle baseline (battery gauge, so run unplugged),
-energy per check, and a check that both backends give the same scores on the same inputs. On the
-Snapdragon X Elite laptop, from the repo root:
+`nightwatch/bench/benchmark.py` compares each model on the Hexagon NPU (QNN) and the CPU (XNNPACK): p50/p95/p99
+latency, throughput, whole-laptop power above an idle baseline (battery gauge, so run unplugged), energy per
+frame/check, memory, and a check that both backends give the same outputs on the same inputs. It detects the
+model from the `.pte`. On the Snapdragon X Elite laptop, from the repo root:
 
 ```bash
-python nightwatch/bench/benchmark.py --pte models/normal_pattern_qnn.pte:NPU --pte models/normal_pattern_xnnpack.pte:CPU --seconds 60 --rate max
+python nightwatch/bench/benchmark.py --pte models/person_ssdlite_qnn.pte:NPU --pte models/person_ssdlite_xnnpack.pte:CPU --rate max
+python nightwatch/bench/benchmark.py --pte models/person_ssdlite_qnn.pte:NPU --pte models/person_ssdlite_xnnpack.pte:CPU --rate 5 --cameras 2
+python nightwatch/bench/benchmark.py --pte models/normal_pattern_qnn.pte:NPU --pte models/normal_pattern_xnnpack.pte:CPU --rate max
 ```
 
-Add `--rate 4` for the realistic load (4 residents checked once per second). Results go to
-`logs/bench/<timestamp>.json`; setup, caveats and the results table are in
-[nightwatch/bench/README.md](nightwatch/bench/README.md).
+The person detector is the main NPU workload (`--rate 5` = 5 frames/s per camera, what `/camera/` sends). Results
+go to `logs/bench/`; setup, caveats and the results tables are in [nightwatch/bench/README.md](nightwatch/bench/README.md).
