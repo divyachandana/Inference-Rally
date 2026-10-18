@@ -2,38 +2,76 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NightWatch Staff</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<title>NightWatch · Staff</title>
+<link rel="stylesheet" href="/assets/theme.css">
 <style>
-  :root { --bg:#0d1117; --card:#161b22; --ink:#e6edf3; --muted:#8b949e; --line:#30363d; --l1:#d29922; --l2:#f0883e; --l3:#f85149; --ok:#3fb950; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:16px; }
-  .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-  .head b { font-size:18px; } .head span { color:var(--muted); font-variant-numeric:tabular-nums; }
-  .start { width:100%; padding:18px; font-size:18px; border:0; border-radius:12px; background:#1f6feb; color:#fff; margin-bottom:14px; }
-  .card { background:var(--card); border:1px solid var(--line); border-left:8px solid var(--l1); border-radius:12px; padding:14px; margin-bottom:12px; }
-  .card.l2 { border-left-color:var(--l2); } .card.l3 { border-left-color:var(--l3); background:#2a1213; }
-  .lvl { font-weight:800; font-size:13px; letter-spacing:.04em; }
-  .title { font-size:18px; font-weight:650; margin:6px 0; }
-  .sub { color:var(--muted); font-size:14px; }
-  .tip { color:var(--ok); font-size:14px; margin-top:6px; }
-  .row { display:flex; gap:10px; margin-top:12px; }
-  .row button { flex:1; padding:14px; font-size:16px; font-weight:650; border:0; border-radius:10px; }
-  .ack { background:#58a6ff; color:#04122a; } .res { background:#238636; color:#fff; }
-  .quiet { text-align:center; color:var(--muted); padding:40px 0; }
+  body.nw { font-size: 17px; padding: max(14px, env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom)); }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .head .nw-brand-mark { width: 34px; height: 34px; }
+  .head .when { text-align: right; }
+  .head .t { font: 750 26px/1 var(--nw-font-display); font-variant-numeric: tabular-nums; }
+  .head .m { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 750; letter-spacing: .08em; margin-top: 4px; }
+  .head .m.is-night { color: var(--nw-moon); } .head .m.is-day { color: var(--nw-sun); }
+
+  .start { width: 100%; margin-bottom: 14px; flex-direction: column; gap: 2px; }
+  .start small { font-size: 13px; font-weight: 600; opacity: .8; }
+  .onshift { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--nw-muted); margin: -4px 0 12px; }
+
+  .quiet { text-align: center; padding: 56px 16px; border: 1px solid var(--nw-line); border-radius: 20px;
+           background: linear-gradient(180deg, var(--nw-surface), var(--nw-bg-2)); }
+  .quiet .nw-ico { width: 56px; height: 56px; color: var(--nw-ok); }
+  .quiet b { display: block; font: 750 26px/1.2 var(--nw-font-display); margin: 12px 0 6px; }
+  .quiet p { margin: 0; color: var(--nw-muted); }
+
+  .card { border-radius: 20px; overflow: hidden; margin-bottom: 14px; border: 2px solid var(--lvl);
+          background: linear-gradient(180deg, var(--lvl-bg), var(--nw-bg-2) 45%); }
+  .band { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: var(--lvl); color: #120a02; }
+  .nw-l3 .band { color: #fff; }
+  .band .lv { display: flex; align-items: center; gap: 9px; font-weight: 850; font-size: 19px; letter-spacing: .08em; }
+  .band .lv .nw-ico { width: 24px; height: 24px; }
+  .band .cd { font-weight: 750; font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; line-height: 1.2; }
+  .band .cd b { font-size: 22px; display: block; }
+  .body { padding: 16px; }
+  .title { font: 750 23px/1.25 var(--nw-font-display); margin: 0 0 14px; }
+  .facts { display: grid; gap: 10px; margin-bottom: 14px; }
+  .fact { display: flex; gap: 12px; align-items: flex-start; }
+  .fact .nw-ico { width: 22px; height: 22px; color: var(--nw-muted); margin-top: 2px; }
+  .fact .k { font-size: 11.5px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--nw-faint); }
+  .fact .v { font-size: 18px; font-weight: 600; color: var(--nw-ink); }
+  .nw-tip { font-size: 16px; }
+  .responding { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; margin-top: 14px;
+                background: rgba(61, 220, 151, .12); border: 1px solid rgba(61, 220, 151, .4); color: var(--nw-ok); font-weight: 700; }
+  .btns { display: grid; gap: 12px; margin-top: 16px; }
+  .btns .nw-btn { width: 100%; }
+  .btns .nw-btn .nw-ico { width: 24px; height: 24px; }
+  details { margin-top: 14px; } summary { cursor: pointer; color: var(--nw-muted); font-size: 14px; padding: 6px 0; }
+  .net { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--nw-faint); }
 </style>
 </head>
-<body>
-<div class="head"><b>NightWatch</b><span id="clock">--:--</span></div>
-<button class="start" id="start">Start shift (enables sound + vibration)</button>
-<div id="list"><div class="quiet">Connecting…</div></div>
+<body class="nw">
+<div class="wrap">
+  <div class="head">
+    <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">NightWatch</div><div class="nw-brand-sub">Night staff phone</div></div></div>
+    <div class="when"><div class="t" id="clock">--:--</div><div class="m" id="mode"></div></div>
+  </div>
+  <button class="nw-btn nw-btn--primary nw-btn--lg start" id="start">Start shift<small>Turns on sound and vibration for alerts</small></button>
+  <div id="list" aria-live="assertive"><div class="quiet"><b>Connecting…</b></div></div>
+  <div class="net" id="net"></div>
+</div>
+<script src="/assets/nw.js"></script>
 <script>
+const { esc, icon, LEVELS, timeline, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const NAMES = ['', 'Heads-up', 'URGENT', 'EMERGENCY'];
+$('logo').innerHTML = icon('logo');
 let audio = null, seen = {};
 
-$('start').onclick = () => { audio = new AudioContext(); $('start').remove(); };
+$('start').onclick = () => {
+  audio = new AudioContext();
+  $('start').outerHTML = `<div class="onshift"><span class="nw-dot is-live"></span>On shift · sound and vibration on</div>`;
+};
 
 function beep(level) {
   if (navigator.vibrate) navigator.vibrate(level >= 3 ? [400, 150, 400, 150, 400] : level === 2 ? [300, 100, 300] : [150]);
@@ -48,32 +86,60 @@ function beep(level) {
   }
 }
 
-async function post(url, body) {
-  await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  tick();
-}
-document.addEventListener('click', (e) => {
-  if (e.target.dataset.ack) post('/api/ack', { alert: +e.target.dataset.ack, by: 'Night staff (phone)' });
-  if (e.target.dataset.res) post('/api/resolve', { alert: +e.target.dataset.res, outcome: 'Found safe, returned to room' });
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.ack) { b.disabled = true; await post('/api/ack', { alert: +b.dataset.ack, by: 'Night staff (phone)' }); tick(); }
+  if (b.dataset.res) { b.disabled = true; await post('/api/resolve', { alert: +b.dataset.res, outcome: 'Found safe, returned to room' }); tick(); }
 });
 
+function countdown(a) {
+  if (a.acked_by || a.escalates_in_s == null) return '';
+  if (a.level === 3) return contactsDone(a) ? '' : `<div class="cd">Next call in<b data-cd="${a.id}">${a.escalates_in_s} s</b></div>`;
+  return `<div class="cd">Level ${a.level + 1} in<b data-cd="${a.id}">${a.escalates_in_s} s</b></div>`;
+}
+
+function card(a) {
+  const L = LEVELS[a.level];
+  return `<article class="card nw-l${a.level}${a.level === 3 && !a.acked_by ? ' nw-attn' : ''}" aria-label="Level ${a.level} ${L.name}">
+    <div class="band"><div class="lv">${icon(L.icon)}${L.word}</div>${countdown(a)}</div>
+    <div class="body">
+      <h2 class="title">${esc(a.title)}</h2>
+      <div class="facts">
+        ${a.description ? `<div class="fact">${icon('eye')}<div><div class="k">Look for</div><div class="v">${esc(a.description)}</div></div></div>` : ''}
+        ${a.room ? `<div class="fact">${icon('pin')}<div><div class="k">Their room</div><div class="v">Room ${esc(a.room)}${a.resident ? ` · ${esc(a.resident)}` : ''}</div></div></div>` : ''}
+      </div>
+      ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What helps</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div>${a.suggestions[1] ? `<div class="nw-tip-more">${esc(a.suggestions[1])}</div>` : ''}</div></div>` : ''}
+      ${a.acked_by ? `<div class="responding">${icon('walk')}${esc(a.acked_by)} is responding</div>` : ''}
+      <div class="btns">
+        ${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary nw-btn--lg" data-ack="${a.id}">${icon('walk')}I'm going</button>`}
+        <button class="nw-btn nw-btn--safe nw-btn--lg" data-res="${a.id}">${icon('check')}Found safe</button>
+      </div>
+      <details><summary>What happened so far (${a.history.length})</summary>${timeline(a.history)}</details>
+    </div>
+  </article>`;
+}
+
+let lastKey = '';
 async function tick() {
   let s;
-  try { s = await (await fetch('/api/state')).json(); } catch { $('list').innerHTML = '<div class="quiet">Server not reachable</div>'; return; }
-  $('clock').textContent = s.clock.slice(0, 5) + (s.night ? ' · night' : ' · day');
+  try { s = await (await fetch('/api/state')).json(); }
+  catch { $('list').innerHTML = `<div class="quiet">${icon('wifiOff')}<b>Server not reachable</b><p>Check you are on the facility Wi-Fi.</p></div>`; lastKey = ''; return; }
+  $('clock').textContent = s.clock.slice(0, 5);
+  $('mode').className = 'm ' + (s.night ? 'is-night' : 'is-day');
+  $('mode').innerHTML = s.night ? `${icon('moon')}NIGHT` : `${icon('sun')}DAY`;
+  $('net').textContent = `Runs on the nurse-station laptop · no internet needed · ${s.facility}`;
   for (const a of s.alerts) {
     if ((seen[a.id] || 0) < a.level && !a.acked_by) beep(a.level);
     seen[a.id] = Math.max(seen[a.id] || 0, a.level);
   }
-  $('list').innerHTML = s.alerts.length ? s.alerts.map((a) => `
-    <div class="card l${a.level}">
-      <div class="lvl" style="color:var(--l${a.level})">${NAMES[a.level]}${a.acked_by ? ' · you are responding' : a.escalates_in_s != null && a.level < 3 ? ` · escalates in ${a.escalates_in_s}s` : ''}</div>
-      <div class="title">${esc(a.title)}</div>
-      ${a.description ? `<div class="sub">${esc(a.description)} · Room ${esc(a.room)}</div>` : ''}
-      ${a.suggestions[0] ? `<div class="tip">Try: ${esc(a.suggestions[0])}</div>` : ''}
-      <div class="row">${a.acked_by ? '' : `<button class="ack" data-ack="${a.id}">I'm going</button>`}
-        <button class="res" data-res="${a.id}">Found safe</button></div>
-    </div>`).join('') : '<div class="quiet">All quiet.</div>';
+  // Only rebuild when something visible changed, so a thumb on a button never loses it mid-tap.
+  const key = JSON.stringify(s.alerts.map((a) => [a.id, a.level, a.acked_by, a.history.length, a.escalates_in_s == null, a.title, contactsDone(a)]));
+  for (const a of s.alerts) { const el = document.querySelector(`[data-cd="${a.id}"]`); if (el) el.textContent = `${a.escalates_in_s} s`; }
+  if (key === lastKey) return; lastKey = key;
+  const open = new Set([...document.querySelectorAll('details[open]')].map((d) => d.closest('.card')?.querySelector('[data-res]')?.dataset.res));
+  $('list').innerHTML = s.alerts.length ? s.alerts.map(card).join('')
+    : `<div class="quiet">${icon('shield')}<b>All quiet</b><p>${s.residents.filter((r) => r.in_bed).length} of ${s.residents.length} residents in bed. You'll get a buzz if anyone needs you.</p></div>`;
+  document.querySelectorAll('.card').forEach((c) => { if (open.has(c.querySelector('[data-res]')?.dataset.res)) c.querySelector('details').open = true; });
 }
 setInterval(tick, 1000); tick();
 </script>
