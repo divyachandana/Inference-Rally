@@ -646,6 +646,15 @@ class Engine:
                           "median_ack_s": round(sorted(acked)[len(acked) // 2]) if acked else None},
             }
 
+    def summary(self) -> dict[str, object]:
+        """The compact "something changed" ping for /api/events (enough to sound an alarm without a fetch)."""
+        with self.lock:
+            open_alerts = [a for a in self.alerts if not a.resolved]
+            return {"rev": self.rev, "clock": self.stamp(), "night": self.is_night(),
+                    "open_alerts": len(open_alerts), "top_level": max((a.level for a in open_alerts), default=0),
+                    "unacked": sum(1 for a in open_alerts if not a.acked_by), "alerts": len(self.alerts),
+                    "last_event": self.events[0] if self.events else None}
+
     def report(self) -> dict[str, object]:
         """Morning handover: everything that happened tonight, with response times and care records."""
         with self.lock:

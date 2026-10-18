@@ -16,6 +16,15 @@ API (JSON):
     POST /api/pair      {"pin": "123456", "name": "Night nurse phone"} -> {"token"}   (other devices must pair;
                         then send header X-NightWatch-Token on every /api/ call. The laptop itself is trusted.)
     GET  /api/state
+    GET  /api/events    Server-Sent Events (text/event-stream), so pages can stop polling /api/state:
+                        "event: state" with {"rev", "clock", "night", "open_alerts", "top_level", "unacked",
+                        "alerts", "last_event"} whenever anything changes (at most ~4 a second), or the
+                        full /api/state view plus "rev" with ?full=1; "event: heartbeat" every 10 s when
+                        quiet. EventSource can't send headers, so phones pass ?token=<pairing token>.
+                            const es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+                            es.addEventListener('state', (e) => { const s = JSON.parse(e.data); ... });
+                        If the stream drops, EventSource reconnects by itself (retry 2 s); keep a slow
+                        /api/state poll as a fallback. Each open stream holds one connection (max 32).
     GET  /api/bench     benchmark runs from nightwatch/bench/benchmark.py (newest first) + the running job
     POST /api/bench/run {"kind": "detector"|"pattern", "seconds": 10}  start one (laptop only)
     GET  /api/resident?id=R-07   profile, now, last 30 min history, tonight's alerts
@@ -80,12 +89,14 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(HERE / "web"), **kwargs)  # type: ignore[arg-type]
 
     def log_message(self, fmt: str, *args: object) -> None:
-        if "/api/state" not in self.path:
-            super().log_message(fmt, *args)
+        if self.path.startswith(("/api/state", "/api/events")):
+            return
+        msg = re.sub(r"token=[^&\s\"]+", "token=REDACTED", fmt % args)
+        sys.stderr.write(f"{self.address_string()} - - [{self.log_date_time_string()}] {msg}\n")
 
-    def _authorized(self) -> bool:
+    def _authorized(self, query_token: str | None = None) -> bool:
         """The laptop is trusted; other devices need a paired token (see pairing.py)."""
-        if PAIRING.allowed(self.client_address[0], self.headers.get("X-NightWatch-Token")):
+        if PAIRING.allowed(self.client_address[0], self.headers.get("X-NightWatch-Token") or query_token):
             return True
         self._json({"error": "pair this device first", "pair": True}, 401)
         return False
@@ -121,8 +132,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _get(self) -> None:
         url = urlparse(self.path)
-        if url.path.startswith("/api/") and not self._authorized():
+        query = parse_qs(url.query)
+        # Only the event stream takes the token in the URL (EventSource can't set headers).
+        token = query.get("token", [None])[0] if url.path == "/api/events" else None
+        if url.path.startswith("/api/") and not self._authorized(token):
             return None
+        if url.path == "/api/events":
+            return self._events(query.get("full", ["0"])[0] in ("1", "true"))
         if url.path == "/api/resident":
             rid = parse_qs(url.query).get("id", [""])[0]
             if not rid:
@@ -150,6 +166,50 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return None
         return super().do_GET()
+
+    def _events(self, full: bool) -> None:
+        """Server-Sent Events: push a ping (or the full view) on every state change, heartbeats when quiet."""
+        with SSE_LOCK:
+            if SSE["clients"] >= SSE_MAX_CLIENTS:
+                raise ApiError(503, "too many live event streams; poll /api/state instead")
+            SSE["clients"] += 1
+        local = PAIRING.is_local(self.client_address[0])
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            self.wfile.write(b"retry: 2000\n\n")
+            rev, beat = -1, time.time()
+            while not STOPPING.is_set():
+                new = ENGINE.wait_change(rev, timeout=0.5)
+                if new != rev:
+                    rev = new
+                    if full:
+                        data = ENGINE.view()
+                        if local:
+                            data["pairing"] = {"pin": PAIRING.pin, "devices": PAIRING.devices}
+                    else:
+                        data = ENGINE.summary()
+                    data["rev"] = rev
+                    self._sse("state", data, rev)
+                    beat = time.time()
+                    STOPPING.wait(SSE_MIN_GAP_S)   # coalesce bursts of changes
+                elif time.time() - beat >= SSE_HEARTBEAT_S:
+                    self._sse("heartbeat", {"rev": rev, "clock": ENGINE.stamp()})
+                    beat = time.time()
+        except OSError:   # the page went away (BrokenPipe / ConnectionReset)
+            pass
+        finally:
+            with SSE_LOCK:
+                SSE["clients"] -= 1
+
+    def _sse(self, event: str, data: object, rev: int | None = None) -> None:
+        head = f"id: {rev}\n" if rev is not None else ""
+        self.wfile.write(f"{head}event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode())
+        self.wfile.flush()
 
     def _read_body(self, path: str) -> dict[str, object]:
         """JSON object bodies only, size-capped (2 MB for camera frames, 64 KB otherwise)."""
@@ -213,6 +273,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+STOPPING = threading.Event()          # set on shutdown: event streams end
+SSE_LOCK = threading.Lock()
+SSE: dict[str, int] = {"clients": 0}
+SSE_MAX_CLIENTS = 32
+SSE_HEARTBEAT_S = 10.0
+SSE_MIN_GAP_S = 0.25
 MAX_BODY = 64 * 1024
 MAX_FRAME_BODY = 2 * 1024 * 1024
 IDENT = re.compile(r"^[A-Za-z0-9_.-]{1,24}$")
