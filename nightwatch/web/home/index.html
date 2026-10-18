@@ -241,7 +241,7 @@ function renderCards() {
   }).join(''));
 }
 
-$('acts').innerHTML = SCENARIOS.map((s) => `<button class="nw-btn act${s.danger ? ' danger' : ''}" data-scn="${s.name}">
+$('acts').innerHTML = SCENARIOS.map((s) => `<button class="nw-btn act${s.danger ? ' danger' : ''}" data-scn="${esc(s.name)}">
   <b>${icon(s.icon)}${esc(s.label)}</b><span>${esc(s.p)}</span></button>`).join('');
 
 function toast(msg, kind) { const t = $('toast'); t.className = 'toast' + (kind ? ' is-' + kind : ''); t.innerHTML = msg; }

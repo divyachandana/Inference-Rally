@@ -619,7 +619,8 @@ function syncPlan() {
     const g = svg.querySelector(`[data-k="cameras:${i}"]`); if (!g) return;
     const [x, y] = drag && drag.list === 'cameras' && drag.i === i && drag.at ? drag.at : camPos(c, i);
     g.setAttribute('transform', `translate(${x} ${y})`);
-    g.setAttribute('aria-label', `Camera ${c.label || c.id}, watches ${camWatches(c)}. Arrow keys change what it watches, Enter edits details.`);
+    const camName = c.label || c.id;   // setAttribute: plain text, no HTML parsing
+    g.setAttribute('aria-label', `Camera ${camName}, watches ${camWatches(c)}. Arrow keys change what it watches, Enter edits details.`);
   });
   svg.querySelectorAll('.mk').forEach((g) => g.classList.toggle('sel', !!selected && g.dataset.k === keyOf(selected.list, selected.i)));
   const ov = $('overlap');
@@ -701,7 +702,8 @@ function assignCam(i, t) {
   $('cams').innerHTML = draft.cameras.map(cameraHTML).join('') || '<p class="muted">No cameras.</p>';
   if (!isLaptop) $('cams').querySelectorAll('input, select, button').forEach((el) => { el.disabled = true; });
   renderSelCard(); refresh();
-  announce(`${c.label || c.id} now watches ${camWatches(c)}`);
+  const camName = c.label || c.id;   // announce() sets textContent
+  announce(`${camName} now watches ${camWatches(c)}`);
 }
 function camTargetAt(p) {
   let best = null, bd = 1e9;
