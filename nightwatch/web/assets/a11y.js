@@ -1,7 +1,8 @@
 // NightWatch display modes: High contrast, Larger text, Reduce motion.
 // Load in <head> (right after auth.js) so the classes land on <html> before first paint.
 // Saved per device in localStorage ("nw-display"); other open NightWatch tabs follow along.
-// Mounts a "Display" menu into every element with [data-nw-display]. Styles: /assets/a11y.css.
+// Mounts a "Display" menu into every element with [data-nw-display], and the shared screen list into
+// every <nav data-nw-nav>. Styles: /assets/a11y.css.
 (function () {
   const KEY = 'nw-display';
   const root = document.documentElement;
@@ -72,9 +73,21 @@
     window.addEventListener('scroll', () => { if (!panel.hidden) place(); }, { passive: true });
     apply();
   }
-  const mountAll = () => document.querySelectorAll('[data-nw-display]').forEach(mount);
+  // Consistent navigation (WCAG 3.2.3): the same screens, in the same order, on every laptop page.
+  // <nav data-nw-nav></nav> is filled in; the current page gets aria-current="page".
+  const SCREENS = [['/home/', 'Home'], ['/dashboard/', 'Nurse station'], ['/staff/', 'Staff phone'], ['/camera/', 'Camera'],
+    ['/sim/', 'Presenter'], ['/report/', 'Shift report'], ['/perf/', 'Performance'], ['/help/', 'Help'], ['/settings/', 'Settings']];
+  function mountNav(nav) {
+    if (nav.dataset.nwNavMounted) return;
+    nav.dataset.nwNavMounted = '1';
+    nav.classList.add('nw-nav');
+    if (!nav.hasAttribute('aria-label')) nav.setAttribute('aria-label', 'NightWatch screens');
+    const here = location.pathname.replace(/index\.html$/, '');
+    nav.innerHTML = SCREENS.map(([href, label]) => `<a href="${href}"${here === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  }
+  const mountAll = () => { document.querySelectorAll('[data-nw-display]').forEach(mount); document.querySelectorAll('[data-nw-nav]').forEach(mountNav); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAll); else mountAll();
 
   // For page scripts: smooth scrolling only when motion is welcome.
-  window.NWDisplay = { get: () => effective(state), set, mount, scrollBehavior: () => (effective(state).rm ? 'auto' : 'smooth') };
+  window.NWDisplay = { get: () => effective(state), set, mount, mountNav, screens: SCREENS, scrollBehavior: () => (effective(state).rm ? 'auto' : 'smooth') };
 })();
