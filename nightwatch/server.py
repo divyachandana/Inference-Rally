@@ -53,8 +53,12 @@ API (JSON):
     POST /api/notify    {"alert": 3, "by": "..."}  "Call for help": fan out to the contact list now (once per 60 s
                         per alert). Also automatic when an alert first reaches level 3. Results land in the
                         alert's "notifications" [{contact_id, role, name, channel, status, detail, at}] and history.
-                        Real calls/SMS need TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM in the environment
-                        and live on; emergency services are always simulated. See nightwatch/notify.py.
+                        Channels: call, sms (Twilio: TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM), push (free ntfy:
+                        contact "topic"), imessage (free, macOS Messages: contact "imessage" or phone), or
+                        combos like "push+imessage". Nothing real goes out until live is on; emergency
+                        services are always simulated. See nightwatch/notify.py.
+    POST /api/contacts/test {"contact_id": "owner"}  (laptop only) one-off "This is a NightWatch demo test
+                        message." to that contact; with live off it returns what would be sent (status dry_run)
 
 Errors: every error body is {"error": "<message staff can read>"} (plus e.g. "choices"). POST bodies must
 be a JSON object sent with Content-Type: application/json (415 otherwise), at most 64 KB (2 MB for
@@ -563,14 +567,22 @@ def r_contacts(body: dict[str, object]) -> dict[str, object]:
     return n.view(local=True)
 
 
+def r_contacts_test(body: dict[str, object]) -> dict[str, object]:
+    _notifier()
+    out = _checked(ENGINE.test_contact(v_id(body, "contact_id")))  # type: ignore[arg-type]
+    out.pop("masked", None)
+    return out
+
+
 def r_notify(body: dict[str, object]) -> dict[str, object]:
     return _checked(ENGINE.notify(v_int(body, "alert"), v_by(body, "Staff")))  # type: ignore[arg-type]
 
 
-ROUTES = {"/api/contacts": r_contacts, "/api/notify": r_notify, "/api/sensor": r_sensor, "/api/ack": r_ack, "/api/resolve": r_resolve, "/api/clock": r_clock,
+ROUTES = {"/api/contacts": r_contacts, "/api/contacts/test": r_contacts_test, "/api/notify": r_notify, "/api/sensor": r_sensor, "/api/ack": r_ack, "/api/resolve": r_resolve, "/api/clock": r_clock,
           "/api/frame": r_frame, "/api/camera/config": r_camera_config, "/api/scenario": r_scenario,
           "/api/record": r_record, "/api/bench/run": r_bench, "/api/backup": r_backup, "/api/settings": r_settings}
 LAPTOP_ONLY = {"/api/contacts": "the contact list can only be changed on the nurse-station laptop",
+               "/api/contacts/test": "test messages can only be sent from the nurse-station laptop",
                "/api/bench/run": "benchmarks can only be started on the laptop",
                "/api/settings": "settings can only be changed on the nurse-station laptop"}
 

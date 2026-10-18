@@ -1,4 +1,11 @@
-"""Emergency contact fan-out: phone calls / SMS through Twilio, demo-grade and safe by default.
+"""Emergency contact fan-out, demo-grade and safe by default. Channels:
+
+    call, sms   Twilio (paid; needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)
+    push        ntfy (free): POST https://ntfy.sh/<topic>; the contact installs the ntfy app and
+                subscribes to that topic. NTFY_SERVER=https://your.server to self-host.
+    imessage    macOS only (free): the laptop's Messages app sends it, via osascript
+    simulated   logged only
+Combine with "+", e.g. "push+imessage" or "call+sms".
 
 Hard rules (tested in tests/test_backend_notify.py):
 - Dry run by default: nothing real is sent until the nurse-station laptop turns contacts_live on
@@ -23,7 +30,10 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -34,7 +44,11 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 ROLES = ("on_call", "family", "owner", "emergency_services", "other")
-CHANNELS = ("call", "sms", "call+sms", "simulated")
+BASE_CHANNELS = ("call", "sms", "push", "imessage")
+CHANNELS = ("call", "sms", "call+sms", "push", "imessage", "push+imessage", "simulated")   # common picks; any "+" combo works
+TOPIC = re.compile(r"^[A-Za-z0-9_-]{12,64}$")
+EMAIL = re.compile(r"^[^@\s\"\\]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$")
+MESSAGES_APP = Path("/System/Applications/Messages.app")
 EMERGENCY_CODES = {"911", "112", "999", "000", "110", "119", "118", "08", "100", "101", "102", "999", "933"}
 E164 = re.compile(r"^\+[1-9]\d{7,14}$")
 IDENT = re.compile(r"^[A-Za-z0-9_.-]{1,24}$")
@@ -85,6 +99,37 @@ def mask(phone: str) -> str:
     return f"{phone[:2]} •••• {phone[-4:]}" if phone else ""
 
 
+def mask_any(v: str) -> str:
+    """Phones as '+1 •••• 4821', emails as 'l•••@icloud.com', topics as 'nigh••••a1b2'."""
+    if not v:
+        return ""
+    if v.startswith("+"):
+        return mask(v)
+    if "@" in v:
+        user, _, domain = v.partition("@")
+        return f"{user[:1]}•••@{domain}"
+    return f"{v[:4]}••••{v[-4:]}"
+
+
+def suggest_topic() -> str:
+    return "nightwatch-" + secrets.token_hex(6)
+
+
+def channel_parts(channel: str) -> list[str]:
+    return ["simulated"] if channel == "simulated" else channel.split("+")
+
+
+def recipient(c: dict[str, object], ch: str) -> str:
+    """Where a channel goes for this contact ('' = nowhere)."""
+    if ch in ("call", "sms"):
+        return str(c.get("phone") or "")
+    if ch == "push":
+        return str(c.get("topic") or "")
+    if ch == "imessage":
+        return str(c.get("imessage") or c.get("phone") or "")
+    return ""
+
+
 def validate_contacts(items: object) -> list[dict[str, object]]:
     if not isinstance(items, list):
         raise ValueError("contacts must be a list")
@@ -105,18 +150,40 @@ def validate_contacts(items: object) -> list[dict[str, object]]:
         if not name or len(name) > 60:
             raise ValueError(f"contact {cid}: name is required (at most 60 characters)")
         channel = c.get("channel") or "simulated"
-        if channel not in CHANNELS:
-            raise ValueError(f"contact {cid}: channel must be one of {', '.join(CHANNELS)}")
+        parts = channel_parts(channel) if isinstance(channel, str) else []
+        if not parts or len(set(parts)) != len(parts) or not (parts == ["simulated"] or set(parts) <= set(BASE_CHANNELS)):
+            raise ValueError(f"contact {cid}: channel must be simulated, or one or more of {', '.join(BASE_CHANNELS)} "
+                             "joined with + (e.g. push+imessage)")
         try:
             phone = clean_phone(c.get("phone"))
         except ValueError as exc:
             raise ValueError(f"contact {cid}: {exc}") from None
-        if channel != "simulated" and role != "emergency_services" and not phone:
-            raise ValueError(f"contact {cid}: a phone number is needed for {channel}")
+        topic = str(c.get("topic") or "").strip()
+        if topic and not TOPIC.match(topic):
+            raise ValueError(f"contact {cid}: ntfy topic must be 12-64 letters, digits, - or _ and hard to guess "
+                             f"(anyone who knows it can read the alerts), e.g. {suggest_topic()}")
+        imsg = str(c.get("imessage") or "").strip()
+        if imsg:
+            if "@" in imsg:
+                if not EMAIL.match(imsg):
+                    raise ValueError(f"contact {cid}: iMessage must be a phone (+15551234821) or an Apple ID email")
+            else:
+                try:
+                    imsg = clean_phone(imsg)
+                except ValueError as exc:
+                    raise ValueError(f"contact {cid}: iMessage {exc}") from None
+        rec = {"phone": phone, "topic": topic, "imessage": imsg}
+        if role != "emergency_services":
+            for ch in parts:
+                if ch != "simulated" and not recipient(rec, ch):
+                    need = {"call": "a phone number", "sms": "a phone number", "push": f"an ntfy topic (e.g. {suggest_topic()})",
+                            "imessage": "a phone number or Apple ID email"}[ch]
+                    raise ValueError(f"contact {cid}: {need} is needed for {ch}")
         residents = c.get("residents") or []
         if not isinstance(residents, list) or len(residents) > 50 or not all(isinstance(r, str) and IDENT.match(r) for r in residents):
             raise ValueError(f"contact {cid}: residents must be a list of resident ids")
-        out.append({"id": cid, "role": role, "name": name, "phone": phone, "channel": channel, "residents": residents})
+        out.append({"id": cid, "role": role, "name": name, "phone": phone, "topic": topic, "imessage": imsg,
+                    "channel": channel, "residents": residents})
     return out
 
 
@@ -161,10 +228,79 @@ class Twilio:
         return self._post("Messages", {"To": to, "Body": text})
 
 
+class Ntfy:
+    """Free push via ntfy.sh (or NTFY_SERVER). The text goes in the body, never in a URL."""
+
+    @staticmethod
+    def server() -> str:
+        url = os.environ.get("NTFY_SERVER", "").strip().rstrip("/")
+        return url if url.startswith(("https://", "http://")) else "https://ntfy.sh"
+
+    def push(self, topic: str, text: str, level: int, who: str) -> str:
+        title = f"NightWatch: {({1: 'HEADS-UP', 2: 'URGENT', 3: 'EMERGENCY'}).get(level, 'ALERT')} {who}".strip()
+        req = urllib.request.Request(
+            f"{self.server()}/{urllib.parse.quote(topic)}", text.encode("utf-8"),
+            {"Title": title.encode("ascii", "replace").decode(),   # HTTP headers are latin-1 only
+             "Priority": "urgent" if level >= 3 else "high",
+             "Tags": "rotating_light" if level >= 3 else "warning",
+             "Content-Type": "text/plain; charset=utf-8"})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+                if r.status != 200:
+                    raise SendFailed(f"ntfy said HTTP {r.status}")
+                return "sent"
+        except urllib.error.HTTPError as exc:
+            raise SendFailed(f"ntfy said HTTP {exc.code}: {exc.reason}") from None
+        except (urllib.error.URLError, socket.timeout, TimeoutError, OSError):
+            raise SendFailed("no internet: staff phones still alerted") from None
+
+
+# The text and recipient arrive as argv: user text is never part of the script source.
+IMESSAGE_SCRIPT = """on run argv
+    set theText to item 1 of argv
+    set theRecipient to item 2 of argv
+    tell application "Messages"
+        set theService to 1st account whose service type = iMessage
+        send theText to participant theRecipient of theService
+    end tell
+end run"""
+
+
+class IMessage:
+    """Free iMessage from the laptop's own Messages app (macOS only)."""
+
+    @staticmethod
+    def available() -> bool:
+        return sys.platform == "darwin" and MESSAGES_APP.exists() and shutil.which("osascript") is not None
+
+    def send(self, to: str, text: str) -> str:
+        if not self.available():
+            raise NotConfigured("iMessage needs macOS")
+        try:
+            done = subprocess.run(["osascript", "-e", IMESSAGE_SCRIPT, text, to], capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            raise SendFailed("Messages didn't answer within 10 s") from None
+        except OSError as exc:
+            raise SendFailed(f"osascript failed ({type(exc).__name__})") from None
+        if done.returncode != 0:
+            err = done.stderr or ""
+            if "-1743" in err or "Not authorized" in err:
+                raise SendFailed("macOS blocked it: allow Automation > Messages for this terminal/app in "
+                                 "System Settings > Privacy & Security > Automation")
+            if "-1728" in err or "Can't get account" in err or "Can’t get" in err:
+                raise SendFailed("Messages isn't signed in to iMessage (or the recipient isn't on iMessage)")
+            raise SendFailed("Messages refused: " + re.sub(r"\+?\d{6,}", lambda m: mask(m[0]), err.strip())[-160:])
+        return "sent"
+
+
 class Notifier:
-    def __init__(self, path: Path | None, transport: object | None = None) -> None:
+    def __init__(self, path: Path | None, transport: object | None = None, ntfy: object | None = None,
+                 imessage: object | None = None) -> None:
         self.path = path
         self.transport = transport or Twilio()
+        self.ntfy = ntfy or Ntfy()
+        self.imessage = imessage or IMessage()
+        self._tested: dict[str, float] = {}
         self.live = False                 # dry run until the laptop turns it on; never saved
         self._lock = threading.Lock()
         self._sent: deque[float] = deque()  # real sends in the last hour
@@ -193,10 +329,20 @@ class Notifier:
     def configured(self) -> bool:
         return bool(getattr(self.transport, "configured", lambda: False)())
 
+    def available(self) -> dict[str, bool]:
+        """Which channels can really send from this laptop right now (push also needs internet)."""
+        twilio = self.configured()
+        return {"call": twilio, "sms": twilio, "push": True,
+                "imessage": bool(getattr(self.imessage, "available", lambda: False)())}
+
     def view(self, local: bool) -> dict[str, object]:
         with self._lock:
-            contacts = [dict(c) if local else dict(c, phone=mask(str(c["phone"]))) for c in self.contacts]
+            contacts = [dict(c) if local else dict(c, phone=mask_any(str(c.get("phone") or "")),
+                                                    topic=mask_any(str(c.get("topic") or "")),
+                                                    imessage=mask_any(str(c.get("imessage") or "")))
+                        for c in self.contacts]
             return {"live": self.live, "twilio_configured": self.configured(), "contacts": contacts,
+                    "available": self.available(), "suggested_topic": suggest_topic(),
                     "roles": list(ROLES), "channels": list(CHANNELS),
                     "limits": {"fanout_gap_s": FANOUT_GAP_S, "per_fanout": MAX_REAL_PER_FANOUT, "per_hour": MAX_REAL_PER_HOUR}}
 
@@ -233,9 +379,29 @@ class Notifier:
             self._sent.append(now)
             return True
 
-    def send(self, channel: str, to: str, text: str) -> tuple[str, str]:
+    def unavailable(self, ch: str) -> str | None:
+        """Why a channel can't really send here, or None."""
+        if ch in ("call", "sms") and not self.configured():
+            return "Twilio not configured"
+        if ch == "imessage" and not self.available()["imessage"]:
+            return "iMessage needs macOS"
+        return None
+
+    def tested_recently(self, cid: str, gap: float = 10) -> bool:
+        with self._lock:
+            now = time.time()
+            if now - self._tested.get(cid, 0) < gap:
+                return True
+            self._tested[cid] = now
+            return False
+
+    def send(self, channel: str, to: str, text: str, level: int = 3, who: str = "") -> tuple[str, str]:
         """Blocking (run in a thread). Returns (status, detail)."""
         try:
+            if channel == "push":
+                return "sent", str(self.ntfy.push(to, text, level, who))  # type: ignore[attr-defined]
+            if channel == "imessage":
+                return "sent", str(self.imessage.send(to, text))  # type: ignore[attr-defined]
             fn = self.transport.call if channel == "call" else self.transport.sms  # type: ignore[attr-defined]
             twilio_status = fn(to, text)
             return ("calling" if channel == "call" else "sent"), str(twilio_status)

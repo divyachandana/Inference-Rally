@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from features import vector
-from notify import FANOUT_GAP_S, MAX_REAL_PER_FANOUT, PREFIX, Notifier
+from notify import FANOUT_GAP_S, MAX_REAL_PER_FANOUT, PREFIX, Notifier, channel_parts, mask_any, recipient
 
 NIGHT_START, NIGHT_END = 21, 5   # default night band, matches the care records (21:00-05:00); configurable
 HISTORY_EVERY_S = 5              # resident history sample period (360 samples = 30 min)
@@ -469,9 +469,11 @@ class Engine:
         text = self._notify_text(a)
         a.history.append((self.stamp(), f"Contacting the call list ({by})" + ("" if n.live else ": dry run, live calls are off")))
         real = 0
+        r = self.residents.get(a.resident or "")
+        who = r.name if r else ""
         for c in n.contacts_for(a.resident):
             name, role = str(c["name"]), str(c["role"])
-            channels = ["call", "sms"] if c["channel"] == "call+sms" else [str(c["channel"])]
+            channels = channel_parts(str(c["channel"]))
             if role == "emergency_services":
                 channels = [channels[0]]
             for ch in channels:
@@ -482,38 +484,80 @@ class Engine:
                     entry.update(status="simulated", detail="would be called per facility policy (simulated)")
                     self._contact_line(a, f"{name}: would be called per facility policy (simulated)")
                     continue
+                to = recipient(c, ch)
                 reason = ("simulated contact" if ch == "simulated"
                           else "simulated camera alert" if a.simulated
                           else "dry run, live calls are off" if not n.live
-                          else "no phone number" if not c["phone"]
-                          else f"limit of {MAX_REAL_PER_FANOUT} real calls/SMS per alert" if real >= MAX_REAL_PER_FANOUT
-                          else "Twilio not configured" if not n.configured()
-                          else "hourly limit reached" if not n.take_budget() else None)
+                          else f"no recipient for {ch}" if not to
+                          else n.unavailable(ch)
+                          or (f"limit of {MAX_REAL_PER_FANOUT} real messages per alert" if real >= MAX_REAL_PER_FANOUT
+                              else "hourly limit reached" if not n.take_budget() else None))
                 if reason:
                     entry.update(status="simulated", detail=reason)
-                    self._contact_line(a, f"{name}: would {'call' if ch != 'sms' else 'text'} (simulated: {reason})")
+                    self._contact_line(a, f"{name}: would {VERBS.get(ch, 'contact')} (simulated: {reason})")
                     continue
                 real += 1
                 entry["status"] = "calling" if ch == "call" else "queued"
-                threading.Thread(target=self._send, args=(n, a, entry, ch, str(c["phone"]), name, text),
-                                 daemon=True, name=f"notify-{a.id}-{c['id']}").start()
+                threading.Thread(target=self._send, args=(n, a, entry, ch, to, name, text, who),
+                                 daemon=True, name=f"notify-{a.id}-{c['id']}-{ch}").start()
         self.bump()
         return {"notified": len(a.notifications), "real": real}
 
-    def _send(self, n: Notifier, a: Alert, entry: dict[str, object], ch: str, phone: str, name: str, text: str) -> None:
-        status, detail = n.send(ch, phone, text)   # network, no locks held
+    def _send(self, n: Notifier, a: Alert, entry: dict[str, object], ch: str, to: str, name: str, text: str,
+              who: str = "") -> None:
+        status, detail = n.send(ch, to, text, a.level, who)   # network, no locks held
         with self.lock:
             entry.update(status=status, detail=detail, at=self.stamp())
-            if status == "calling":
-                line = f"Calling {name} … ringing"
-            elif status == "sent":
-                line = f"SMS to {name} sent"
-            elif status == "simulated":
-                line = f"{name}: not reached ({detail})"
-            else:
-                line = f"{'Call' if ch == 'call' else 'SMS'} to {name} failed: {detail}"
-            self._contact_line(a, line)
+            self._contact_line(a, self._result_line(ch, name, status, detail))
             self.bump()
+
+    @staticmethod
+    def _result_line(ch: str, name: str, status: str, detail: str) -> str:
+        label = LABELS.get(ch, ch)
+        if status == "calling":
+            return f"Calling {name} … ringing"
+        if status == "sent":
+            return f"{label} to {name} sent"
+        if status == "simulated":
+            return f"{name}: not reached ({detail})"
+        return f"{label} to {name} failed: {detail}"
+
+    def test_contact(self, cid: str) -> dict[str, object]:
+        """One-off "test message" to one contact, so staff can check their phone before the night.
+        Dry run (live off): says what would be sent. Blocks while sending (at most ~10 s per channel)."""
+        n = self.notifier
+        if n is None:
+            return {"error": "contacts are not set up on this server"}
+        c = next((dict(x) for x in list(n.contacts) if x["id"] == cid), None)
+        if c is None:
+            return {"error": f"unknown contact {cid!r}"}
+        if n.tested_recently(cid):
+            return {"error": f"a test was already sent to {c['name']} in the last 10 s"}
+        text = TEST_TEXT
+        results = []
+        for ch in channel_parts(str(c["channel"])):
+            to = recipient(c, ch)
+            item: dict[str, object] = {"channel": ch, "to": to, "text": text}
+            if c["role"] == "emergency_services":
+                item.update(status="simulated", detail="emergency services are always simulated")
+            elif ch == "simulated":
+                item.update(status="simulated", detail="simulated contact")
+            elif not to:
+                item.update(status="simulated", detail=f"no recipient for {ch}")
+            elif (why := n.unavailable(ch)) is not None:
+                item.update(status="simulated", detail=why)
+            elif not n.live:
+                item.update(status="dry_run", detail="live is off: this is what would be sent")
+            elif not n.take_budget():
+                item.update(status="simulated", detail="hourly limit reached")
+            else:
+                status, detail = n.send(ch, to, text, 1, "test")
+                item.update(status=status, detail=detail)
+            results.append(item)
+        summary = ", ".join(f"{x['channel']}: {x['status']}" for x in results)
+        self.log("contact", f"Test message to {c['name']} ({summary})")
+        return {"ok": True, "live": n.live, "contact": c["id"], "results": results,
+                "masked": [dict(x, to=mask_any(str(x["to"]))) for x in results]}
 
     def _contact_line(self, a: Alert, line: str) -> None:
         a.history.append((self.stamp(), line))
@@ -748,6 +792,8 @@ class Engine:
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
                 "contacts_live": bool(self.notifier and self.notifier.live),
                 "twilio_configured": bool(self.notifier and self.notifier.configured()),
+                "channels": self.notifier.available() if self.notifier else
+                            {"call": False, "sms": False, "push": False, "imessage": False},
                 "night_hours": [self.night_start, self.night_end],
                 "taxonomy": TAXONOMY,
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
@@ -1001,6 +1047,11 @@ class Engine:
             self._scenario = threading.Thread(target=run, daemon=True, name=f"scenario-{name}")
             self._scenario.start()
         return {"ok": True, "scenario": name}
+
+
+VERBS = {"call": "call", "sms": "text", "push": "push", "imessage": "iMessage", "simulated": "contact"}
+LABELS = {"call": "Call", "sms": "SMS", "push": "Push", "imessage": "iMessage"}
+TEST_TEXT = "This is a NightWatch demo test message."
 
 
 def _s(ev: dict[str, object]) -> Callable[[Engine], object]:
