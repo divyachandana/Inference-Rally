@@ -60,6 +60,22 @@
   .cam.is-off, .cam.is-paused { border-style: dashed; }
   .cam .nm b { display: block; font-weight: 650; } .cam .nm .why { font-size: 12px; color: var(--nw-muted); }
   @media (max-width: 420px) { .cams { grid-template-columns: 1fr; } }
+  /* live scenario status */
+  .nowrun { margin-top: 14px; border: 1px solid var(--nw-line-strong); border-radius: 14px; background: var(--nw-bg-2); padding: 12px 14px; }
+  .nowrun:empty { display: none; }
+  .nowrun .h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
+  .nowrun .h b { font-size: 15px; } .nowrun .h span { font-size: 12.5px; color: var(--nw-muted); font-variant-numeric: tabular-nums; }
+  .miles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .miles li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--nw-radius-pill); font-size: 12.5px; font-weight: 650;
+              border: 1px solid var(--nw-line); color: var(--nw-faint); background: var(--nw-surface); }
+  .miles li .st { font-size: 11px; font-weight: 800; letter-spacing: .06em; }
+  .miles li.ok { color: var(--nw-ink); border-color: rgba(61, 220, 151, .45); } .miles li.ok .st { color: var(--nw-ok); }
+  .miles li.next { color: var(--nw-ink); border-color: var(--nw-accent); box-shadow: 0 0 0 2px rgba(138, 180, 255, .2); } .miles li.next .st { color: var(--nw-accent); }
+  .miles li.bad { color: #ffc2c8; border-color: var(--nw-l3); } .miles li.bad .st { color: var(--nw-l3); }
+  .nowrun .last { margin-top: 10px; font-size: 13px; color: var(--nw-ink-2); } .nowrun .last time { font-family: var(--nw-mono); color: var(--nw-faint); margin-right: 8px; }
+  .resetbox { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
+  .resetbox .q { font-size: 13px; color: #ffc2c8; font-weight: 650; }
+  .nw-btn--danger { background: var(--nw-l3); border-color: var(--nw-l3); color: #fff; }
   /* demo guide */
   .steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
   .steps button { width: 100%; text-align: left; font: inherit; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
@@ -114,7 +130,8 @@
 
   <section class="nw-panel" aria-labelledby="h-scn">
     <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-scn">Scenarios</h2>
-      <button class="nw-btn nw-btn--ghost" data-scn="reset">Reset</button></div>
+      <span class="resetbox" id="resetbox"><button class="nw-btn nw-btn--ghost" id="reset-ask">Reset everything</button></span></div>
+    <div class="nowrun" id="nowrun" aria-live="polite"></div>
     <div class="scn">
       <button data-scn="night_elopement"><span class="r1"><span class="when night" data-ico="moon">02:08 · NIGHT</span><span class="nw-kbd">1</span></span>
         <b>R-07 heads for the front door</b><span class="exp">Expect <em style="color:var(--nw-l1)">heads-up</em> → <em style="color:var(--nw-l2)">urgent</em> → <em style="color:var(--nw-l3)">emergency</em> if nobody acknowledges. Walks outside after ~40 s.</span></button>
@@ -140,7 +157,7 @@
       <div class="btnrow">
         <button class="nw-btn" data-time="02:08" data-ico="moon">02:08 night</button>
         <button class="nw-btn" data-time="14:00" data-ico="sun">14:00 day</button>
-        <button class="nw-btn" data-time="20:58" data-ico="clock">20:58 night starts soon</button>
+        <button class="nw-btn" data-time="20:58" data-ico="clock" id="soon"><span>20:58 night starts soon</span></button>
       </div>
       <div class="nw-panel-head" style="margin:18px 0 12px"><h2 class="nw-panel-title">Doors and windows</h2></div>
       <div class="doors" id="doors"></div>
@@ -158,7 +175,7 @@ const $ = (id) => document.getElementById(id);
 const send = (body) => post('/api/sensor', body);
 const call = (url, body) => post(url, body);
 $('logo').innerHTML = icon('logo');
-document.querySelector('[data-scn="reset"]').innerHTML = `${icon('reset')}Reset`;
+$('reset-ask').insertAdjacentHTML('afterbegin', icon('reset'));
 document.querySelectorAll('[data-ico]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.ico)));
 
 const ZONES = ['room', 'corridor', 'common', 'exit', 'outside'];
@@ -181,6 +198,11 @@ function build(s) {
 
 function update(s) {
   state = s;
+  if (s.night_hours) {   // configurable night band: "two minutes before night starts"
+    const h = (Number(s.night_hours[0]) + 23) % 24, t = `${String(h).padStart(2, '0')}:58`;
+    if ($('soon').dataset.time !== t) { $('soon').dataset.time = t; $('soon').querySelector('span').textContent = `${t} night starts soon`; }
+  }
+  renderNowRun(s);
   if (!built) build(s);
   $('clock').textContent = s.clock;
   $('mode').className = 'nw-mode ' + (s.night ? 'is-night' : 'is-day');
@@ -220,7 +242,64 @@ function update(s) {
 
 async function tick() { try { update(await (await fetch('/api/state')).json()); } catch { $('status').innerHTML = '<b>Server not reachable</b>'; } }
 
+/* ------------------------------------------------------------------ live status of the running scenario */
+const R = (s, id) => s.residents.find((r) => r.id === id) || {};
+const anyLevel = (s, n) => s.alerts.some((a) => a.level >= n) || s.recent.some((a) => a.max_level >= n);
+const MILES = {
+  night_elopement: { title: 'R-07 heads for the front door', steps: [
+    ['Clock 02:08 · night', (s) => s.night && s.clock.startsWith('02:0')],
+    ['R-07 out of bed', (s) => !R(s, 'R-07').in_bed],
+    ['Heads-up', (s) => anyLevel(s, 1)],
+    ['In the corridor', (s) => ['corridor', 'exit', 'outside'].includes(R(s, 'R-07').zone)],
+    ['At the exit', (s) => ['exit', 'outside'].includes(R(s, 'R-07').zone)],
+    ['Front door opens · urgent', (s) => anyLevel(s, 2)],
+    ['No answer · emergency', (s) => anyLevel(s, 3), 'bad'],
+    ['Walks outside', (s) => R(s, 'R-07').zone === 'outside' || s.recent.some((a) => /OUTSIDE/.test(a.title)), 'bad'],
+    ['Answered on a phone', (s) => s.alerts.some((a) => a.acked_by) || s.recent.some((a) => a.history.some(([, h]) => /^Acknowledged/.test(h)))],
+    ['Closed · found safe', (s) => s.recent.some((a) => a.resident === 'R-07')],
+  ] },
+  night_bathroom: { title: 'R-15 ensuite trip', steps: [
+    ['Clock 03:00 · night', (s) => s.night && s.clock.startsWith('03:')],
+    ['R-15 up', (s) => !R(s, 'R-15').in_bed],
+    ['Back in bed', (s, seen) => seen.has(1) && R(s, 'R-15').in_bed],
+    ['No alert raised', (s, seen) => seen.has(2) && !s.alerts.length && !s.recent.length],
+  ] },
+  day_visits: { title: 'Visitors come and go', steps: [
+    ['Clock 14:00 · day', (s) => !s.night && s.clock.startsWith('14:')],
+    ['Residents walking', (s) => s.residents.some((r) => !r.in_bed)],
+    ['Doors open · logged as visits', (s) => s.stats.visits_today > 0],
+    ['3 visits logged', (s) => s.stats.visits_today >= 3],
+    ['No alarms', (s, seen) => seen.has(3) && !s.alerts.length],
+  ] },
+  camera_walkout: { title: 'Camera: R-07 walks out (simulated)', steps: [
+    ['Clock 02:08 · night', (s) => s.night && s.clock.startsWith('02:0')],
+    ['Simulated camera frames', (s) => (s.cameras || []).some((c) => c.simulated)],
+    ['Track crosses the doorway', (s) => anyLevel(s, 1) || R(s, 'R-07').zone !== 'room'],
+    ['Heads-up: left their room', (s) => s.alerts.concat(s.recent).some((a) => /left their room/.test(a.title))],
+  ] },
+};
+let running = null;   // { name, started, seen:Set }
+try { running = JSON.parse(sessionStorage.getItem('nw-running') || 'null'); if (running) running.seen = new Set(running.seen); } catch {}
+function saveRunning() { try { sessionStorage.setItem('nw-running', JSON.stringify(running ? { ...running, seen: [...running.seen] } : null)); } catch {} }
+function renderNowRun(s) {
+  const box = $('nowrun');
+  if (!running || !MILES[running.name]) { box.innerHTML = ''; return; }
+  const M = MILES[running.name];
+  M.steps.forEach(([, test], i) => { try { if (!running.seen.has(i) && test(s, running.seen)) running.seen.add(i); } catch {} });
+  saveRunning();
+  const next = M.steps.findIndex((_, i) => !running.seen.has(i));
+  const el = Math.round((Date.now() - running.started) / 1000);
+  const ev = s.events[0];
+  box.innerHTML = `<div class="h"><b>${icon('play')} Now running: ${esc(M.title)}</b><span>${el} s since start · ${next === -1 ? 'all steps reached' : `step ${next + 1} of ${M.steps.length}`}</span></div>
+    <ol class="miles">${M.steps.map(([label, , tone], i) => {
+      const ok = running.seen.has(i), cls = ok ? (tone === 'bad' ? 'bad' : 'ok') : i === next ? 'next' : '';
+      return `<li class="${cls}"><span class="st">${ok ? '✓ DONE' : i === next ? '● NOW' : '○'}</span>${esc(label)}</li>`;
+    }).join('')}</ol>
+    ${ev ? `<div class="last"><time>${esc(ev.t)}</time>${esc(ev.text)}</div>` : ''}`;
+}
+
 function runScenario(name) {
+  running = name === 'reset' ? null : { name, started: Date.now(), seen: new Set() }; saveRunning();
   call('/api/scenario', { name });
   document.querySelectorAll('.scn button').forEach((b) => b.classList.toggle('ran', b.dataset.scn === name));
   // a scenario resets the facility: let the next poll re-read live HR values
@@ -231,6 +310,20 @@ function toggleExit(id) {
   send({ type: 'door', exit: id, open: !(e && e.open) }).then(tick);
 }
 
+function resetAsk(on) {
+  $('resetbox').innerHTML = on
+    ? `<span class="q" id="reset-q">Reset clock, residents, alerts, records and cameras?</span><button class="nw-btn nw-btn--danger" id="reset-yes">Yes, reset everything</button><button class="nw-btn" id="reset-no">Cancel</button>`
+    : `<button class="nw-btn nw-btn--ghost" id="reset-ask">${icon('reset')}Reset everything</button>`;
+  (on ? $('reset-no') : $('reset-ask')).focus();
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#reset-ask')) resetAsk(true);
+  else if (e.target.closest('#reset-no')) resetAsk(false);
+  else if (e.target.closest('#reset-yes')) {
+    runScenario('reset'); done.clear(); step = 0; renderGuide(); resetAsk(false);
+    document.querySelectorAll('.scn button').forEach((b) => b.classList.remove('ran'));
+  }
+});
 function allCameras(on) {
   return Promise.all((state ? state.cameras : []).map((c) => post('/api/camera/config', { camera: c.id, enabled: on, by: 'presenter' }))).then(tick);
 }
