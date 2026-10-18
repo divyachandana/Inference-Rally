@@ -6,6 +6,9 @@
     add --lan to let staff phones on the facility Wi-Fi open /staff/ (still never leaves the building)
     add --fresh to start a clean night instead of restoring tonight's saved state
 
+Logs: one JSON object per line in logs/nightwatch.log (rotated at 5 MB): requests, engine events,
+errors with tracebacks, start/stop. Ctrl+C (or SIGTERM) saves tonight's state before exiting.
+
 Restart-safe: alerts (history, care records, acks), events, visits, camera on/off/schedule and doorway
 lines and the demo clock are saved to logs/night_state.json (git-ignored) about 1 s after every change
 and restored on the next start if the file is from the same night. Scenarios and settings reset it.
@@ -29,7 +32,8 @@ API (JSON):
     POST /api/bench/run {"kind": "detector"|"pattern", "seconds": 10}  start one (laptop only)
     GET  /api/resident?id=R-07   profile, now, last 30 min history, tonight's alerts
     GET  /api/settings  /  POST /api/settings (laptop only; saved to git-ignored data/facility.local.json)
-    GET  /api/health    models, cameras, uptime; plus phone PIN/address for the laptop itself
+    GET  /api/health    models, cameras, uptime, "version" (git short hash), "state" (restored or not);
+                        plus phone PIN/address for the laptop itself
     POST /api/record    {"alert", "affect", "intervention", "nondrug_alt"?, "note"?, "by"}  file a care record
     POST /api/backup    {"alert", "by"}  ask for help: all staff phones alerted
     GET  /api/report    the night's shift report (every alert, response times, severity, draft care records)
@@ -53,9 +57,14 @@ from __future__ import annotations
 
 import argparse
 import base64
+import functools
 import json
+import logging
+import logging.handlers
 import re
+import signal
 import socket
+import subprocess
 from urllib.parse import parse_qs, urlparse
 import sys
 import threading
@@ -71,6 +80,9 @@ from scorer import build  # noqa: E402
 from vision.tracker import Tracker  # noqa: E402
 
 STATE_FILE = HERE.parent / "logs" / "night_state.json"   # git-ignored
+LOG_FILE = HERE.parent / "logs" / "nightwatch.log"       # git-ignored
+LOG = logging.getLogger("nightwatch")
+STATE_INFO: dict[str, object] = {"file": STATE_FILE.name, "restored": False, "why": "not loaded"}
 ENGINE: Engine
 DETECTOR: object | None = None
 TRACKERS: dict[str, Tracker] = {}
@@ -93,6 +105,13 @@ class Handler(SimpleHTTPRequestHandler):
             return
         msg = re.sub(r"token=[^&\s\"]+", "token=REDACTED", fmt % args)
         sys.stderr.write(f"{self.address_string()} - - [{self.log_date_time_string()}] {msg}\n")
+        if args and isinstance(args[0], str) and args[0].startswith(("GET", "POST", "HEAD")):
+            if args[0].startswith(("GET", "HEAD")) and len(args) > 1 and str(args[1]) in ("200", "302", "304"):
+                return   # page loads and polling: not worth a line each; every POST and every error is logged
+            LOG.info("http", extra={"fields": {"ip": self.client_address[0], "request": msg.split('"')[1] if '"' in msg else msg,
+                                               "status": str(args[1]) if len(args) > 1 else None}})
+        else:
+            LOG.warning("http", extra={"fields": {"ip": self.client_address[0], "detail": msg}})
 
     def _authorized(self, query_token: str | None = None) -> bool:
         """The laptop is trusted; other devices need a paired token (see pairing.py)."""
@@ -125,6 +144,7 @@ class Handler(SimpleHTTPRequestHandler):
         import traceback
 
         print(f"[server] {self.command} {self.path.split('?')[0]} failed: {exc!r}\n{traceback.format_exc()}", file=sys.stderr)
+        LOG.error("request failed", exc_info=exc, extra={"fields": {"method": self.command, "path": self.path.split("?")[0]}})
         try:
             self._json({"error": f"server error: {type(exc).__name__}"}, 500)
         except OSError:
@@ -562,8 +582,21 @@ def _health(local: bool) -> dict[str, object]:
     return out
 
 
+@functools.lru_cache(maxsize=1)
+def _version() -> str | None:
+    """Git short hash of the running code (None outside a git checkout)."""
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE.parent, capture_output=True,
+                             text=True, timeout=3)
+        return out.stdout.strip() or None if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def _health_unlocked() -> dict[str, object]:
     return {
+        "version": _version(), "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(STARTED)),
+        "state": dict(STATE_INFO),
         "uptime_s": round(time.time() - STARTED),
         "pattern_model": {"name": ENGINE.scorer.name, "device": ENGINE.scorer.device},  # type: ignore[attr-defined]
         "camera_model": {"name": DETECTOR.name, "device": DETECTOR.device} if DETECTOR else None,  # type: ignore[attr-defined]
@@ -699,22 +732,53 @@ def _camera_config(body: dict[str, object]) -> dict[str, object]:
 
 def _restore_state(path: Path, fresh: bool) -> None:
     """Restore tonight's saved alerts/cameras/clock after a restart, and redraw saved doorway lines."""
+    STATE_INFO.update(file=path.name, restored=False)
     if fresh or not path.exists():
+        STATE_INFO["why"] = "--fresh" if fresh else "no saved state"
         print("State: clean night" + (" (--fresh)" if fresh else ""))
         return
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError) as exc:
+        STATE_INFO["why"] = f"unreadable ({type(exc).__name__})"
         print(f"State: {path.name} unreadable ({exc!r}), starting a clean night")
+        LOG.warning("state unreadable", extra={"fields": {"file": str(path), "error": repr(exc)}})
         return
     ok, why = ENGINE.restore(data)
+    STATE_INFO.update(restored=ok, why=why)
     print(f"State: {'restored' if ok else 'not restored'} from {path.name} ({why})")
+    LOG.info("state restore", extra={"fields": {"restored": ok, "why": why}})
     if not ok:
         return
     with TRACK_LOCK:
         for cid, cam in ENGINE.snapshot()["cameras"].items():  # type: ignore[union-attr]
             if cam.get("doorway"):
                 _tracker(cid).set_doorway(list(cam["doorway"]["line"]), int(cam["doorway"].get("inside", 1)))
+
+
+class JsonLines(logging.Formatter):
+    """One JSON object per line: easy to grep, and to read back after a night."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        out = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(record.created)) + f".{int(record.msecs):03d}",
+               "level": record.levelname, "event": record.getMessage(), "thread": record.threadName}
+        out.update(getattr(record, "fields", {}))
+        if record.exc_info:
+            out["exc"] = self.formatException(record.exc_info)
+        return json.dumps(out, default=str)
+
+
+def _setup_logging(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    except OSError as exc:
+        print(f"[log] can't write {path}: {exc!r} (continuing without a log file)")
+        return
+    handler.setFormatter(JsonLines())
+    LOG.addHandler(handler)
+    LOG.setLevel(logging.INFO)
+    LOG.propagate = False
 
 
 def main() -> None:
@@ -733,12 +797,15 @@ def main() -> None:
     p.add_argument("--unpair-all", action="store_true", help="forget every paired phone")
     p.add_argument("--fresh", action="store_true", help="start a clean night (don't restore logs/night_state.json)")
     p.add_argument("--state", type=Path, default=STATE_FILE, help="where tonight's state is saved")
+    p.add_argument("--log", type=Path, default=LOG_FILE, help="structured log file (JSON lines)")
     args = p.parse_args()
+    _setup_logging(args.log)
 
     facility = args.facility
     if facility == HERE / "demo" / "facility.json" and SETTINGS_FILE.exists():
         facility = SETTINGS_FILE   # settings edited on this laptop win over the demo file
     ENGINE = Engine(facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
+    ENGINE.on_log = lambda kind, text: LOG.info("engine", extra={"fields": {"kind": kind, "text": text}})
     LAN.update(on=args.lan, port=args.port)
     PAIRING = Pairing(HERE.parent / "logs" / "paired_devices.json", args.pin)
     if args.unpair_all:
@@ -752,6 +819,7 @@ def main() -> None:
                 ENGINE.tick()
             except Exception as exc:  # noqa: BLE001 - the watch loop must never stop
                 print(f"[tick] error: {exc!r}")
+                LOG.error("tick failed", exc_info=exc)
             time.sleep(1)
 
     if args.camera_model:
@@ -770,7 +838,30 @@ def main() -> None:
     if args.lan:
         print("LAN mode: staff phones on this network can open /staff/ using this computer's IP address.")
         print(f"Phone pairing PIN: {PAIRING.pin}   ({PAIRING.devices} phone(s) already paired)")
-    ThreadingHTTPServer((host, args.port), Handler).serve_forever()
+    httpd = ThreadingHTTPServer((host, args.port), Handler)
+    LOG.info("start", extra={"fields": {"version": _version(), "port": args.port, "lan": args.lan,
+                                        "scorer": ENGINE.scorer.name, "camera_model": DETECTOR.name if DETECTOR else None,  # type: ignore[attr-defined]
+                                        "state": dict(STATE_INFO)}})
+
+    def stop(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    for name in ("SIGTERM", "SIGBREAK"):   # SIGBREAK: Ctrl+Break on Windows
+        if hasattr(signal, name):
+            try:
+                signal.signal(getattr(signal, name), stop)
+            except (OSError, ValueError):
+                pass
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping: saving tonight's state...")
+    finally:
+        STOPPING.set()
+        ENGINE.stop_autosave(final_save=True)
+        LOG.info("stop", extra={"fields": {"saved_to": str(args.state), "alerts": len(ENGINE.alerts)}})
+        httpd.server_close()
+        print(f"Saved to {args.state}. Restart within the night to pick up where it left off.")
 
 
 if __name__ == "__main__":
