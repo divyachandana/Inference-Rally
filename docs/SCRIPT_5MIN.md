@@ -18,13 +18,15 @@ For the recorded video and the live demo. About 700 spoken words, roughly 5:00 a
 **DO:** Title slide, or the dashboard idle at night ("All quiet").
 
 **SAY:**
-> In Wisconsin, a memory-care resident walked out through a door at 12:41 in the morning. According to authorities,
-> the door alarm went off and workers ignored it. The resident was found dead outside, and a jury ordered the operator to pay
-> about four million dollars.
+> Mildred Hernandez was a hundred years old and had Alzheimer's. One night in 2019, according to the lawsuit, she
+> walked out of her assisted-living facility in Sacramento through a door that locked behind her. She died of
+> hypothermia. Her family says staff knew she wandered at night. This year a jury awarded them a hundred and ten
+> million dollars.
 >
 > It isn't rare. Wandering affects roughly a quarter of nursing-home residents with dementia, and the worst cases
-> happen at night. One of our teammates works in memory care: in her experience, one night worker can cover around
-> forty residents. An alarm only helps if someone answers it.
+> happen at night, when one night worker can be covering around forty residents. That's our teammate's experience
+> in memory care. *(In another case, in Wisconsin, a door alarm went off and workers ignored it.)* A lawsuit comes
+> years later. What she needed was someone at that door within a minute.
 
 ## 0:35–0:55 · What NightWatch is
 
@@ -125,5 +127,7 @@ the dashboard still running ("Offline · still protecting").
 - Residents are synthetic. The simulated camera walk-out is labelled SIMULATED; say "simulated" if you use it.
 - The phone window on the laptop is "the staff phone view"; a real phone pairs with a PIN over the facility Wi-Fi.
 - Messages go out by iMessage/push in this demo; production would use calls/SMS. Only alert text leaves the building.
-- No NPU numbers unless measured on the Snapdragon laptop. Lawsuit wording: "according to authorities", "a jury ordered".
+- No NPU numbers unless measured on the Snapdragon laptop. Lawsuit wording: Sacramento = "according to the lawsuit",
+  "her family says", "a jury awarded $110 million" (March 2026; $100M of it punitive; against the corporate owner and an
+  investment firm). Wisconsin = "according to authorities". Allegations, not findings: the defendants may appeal.
 - "Supports staff". It is not a medical device.
