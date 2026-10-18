@@ -207,7 +207,8 @@
     try {
       const r = await post(url, body);
       const out = await r.json().catch(() => ({}));
-      if (!r.ok || out.error) { toast(out.error ? `${failMsg} (${out.error})` : failMsg); return { ok: false, out }; }
+      // Reached the server but refused: show the server's reason, not "didn't reach".
+      if (!r.ok || out.error) { toast(out.error ? `Not done: ${out.error}` : failMsg); return { ok: false, out }; }
       return { ok: true, out };
     } catch { toast(failMsg); return { ok: false, out: {} }; }
   };
@@ -263,7 +264,8 @@
     const st = es ? 'simulated' : (CSTAT[n.status] ? n.status : 'queued');
     const [labelEn, sic] = CSTAT[st];
     const label = (tr.status && tr.status[st]) || labelEn;
-    const detail = es ? (tr.es || 'would be called per facility policy (simulated)') : [CHANNEL[n.channel] || n.channel, n.detail, n.at].filter(Boolean).join(' · ');
+    const detail = es ? (tr.es || 'would be called per facility policy (simulated)')
+      : [n.channel !== 'simulated' && (CHANNEL[n.channel] || n.channel), !/^simulated( contact)?$/i.test(n.detail || '') && n.detail, n.at].filter(Boolean).join(' · ');
     const nm = n.name && n.name !== roleName && n.name !== roleEn ? n.name : '';
     return `<li>${icon(ic)}<span class="who"><b>${esc(nm || roleName)}</b>${nm ? ` · ${esc(roleName)}` : ''}<small>${esc(detail)}</small></span>
       <span class="nw-cstat is-${st}">${icon(sic)}${esc(label)}</span></li>`;
