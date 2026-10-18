@@ -414,11 +414,19 @@ class Engine:
             a.contact_step += 1
             a.level_since = time.time()
 
+    def _open_alert(self, alert_id: int) -> tuple[Alert | None, dict[str, object] | None]:
+        a = next((x for x in self.alerts if x.id == alert_id), None)
+        if a is None:
+            return None, {"error": f"no such open alert (#{alert_id} doesn't exist)"}
+        if a.resolved:
+            return None, {"error": f"alert #{alert_id} is already resolved"}
+        return a, None
+
     def ack(self, alert_id: int, by: str) -> dict[str, object]:
         with self.lock:
-            a = next((x for x in self.alerts if x.id == alert_id), None)
-            if a is None or a.resolved:
-                return {"error": "no such open alert"}
+            a, err = self._open_alert(alert_id)
+            if a is None:
+                return err  # type: ignore[return-value]
             a.acked_by, a.acked_at = by, time.time()
             secs = round(a.acked_at - a.created)
             a.history.append((self.stamp(), f"Acknowledged by {by} ({secs} s after first alert)"))
@@ -427,9 +435,9 @@ class Engine:
 
     def resolve(self, alert_id: int, outcome: str) -> dict[str, object]:
         with self.lock:
-            a = next((x for x in self.alerts if x.id == alert_id), None)
-            if a is None or a.resolved:
-                return {"error": "no such open alert"}
+            a, err = self._open_alert(alert_id)
+            if a is None:
+                return err  # type: ignore[return-value]
             self._close(a, outcome, by_staff=True)
             r = self.residents.get(a.resident or "")
             if r:
@@ -525,8 +533,10 @@ class Engine:
         """Staff confirm the two fields the system can't know, and file the record."""
         with self.lock:
             a = next((x for x in self.alerts if x.id == alert_id), None)
-            if a is None or not a.record:
-                return {"error": "no closed alert with a draft record"}
+            if a is None:
+                return {"error": f"no such alert (#{alert_id} doesn't exist)"}
+            if not a.record:
+                return {"error": f"alert #{alert_id} is still open: resolve it before filing the record"}
             if affect not in TAXONOMY["affect"]:
                 return {"error": f"affect must be one of {TAXONOMY['affect']}"}
             if intervention not in TAXONOMY["intervention"]:
@@ -543,9 +553,9 @@ class Engine:
     def request_backup(self, alert_id: int, by: str) -> dict[str, object]:
         """A responder asks for help: every staff phone is alerted, at least at urgent level."""
         with self.lock:
-            a = next((x for x in self.alerts if x.id == alert_id and not x.resolved), None)
+            a, err = self._open_alert(alert_id)
             if a is None:
-                return {"error": "no such open alert"}
+                return err  # type: ignore[return-value]
             if a.level < 2:
                 self._set_level(a, 2, f"backup requested by {by[:40]}")
             a.backup_by = by[:40]
@@ -583,6 +593,8 @@ class Engine:
             spec = validate_settings(new)
         except ValueError as exc:
             return {"error": str(exc)}
+        except (TypeError, AttributeError, IndexError, KeyError):
+            return {"error": "settings are malformed: expected the same shape as GET /api/settings"}
         timeouts = spec.pop("timeouts", None)
         with self.lock:
             save_to.parent.mkdir(parents=True, exist_ok=True)

@@ -33,12 +33,19 @@ API (JSON):
     POST /api/camera/config {"camera": "hall12", "line": [x1, y1, x2, y2] | null, "inside": 1 | -1}
                         or {"camera": "hall12", "enabled": true|false, "schedule": "always"|"night", "by": "..."}
     POST /api/scenario  {"name": "night_elopement" | "night_bathroom" | "day_visits" | "reset"}
+
+Errors: every error body is {"error": "<message staff can read>"} (plus e.g. "choices"). POST bodies must
+be a JSON object sent with Content-Type: application/json (415 otherwise), at most 64 KB (2 MB for
+/api/frame; 413). 400 bad field (type/range/length), 401 not paired, 403 laptop only / wrong PIN,
+404 unknown resident/exit/camera/alert/scenario/route, 409 alert already resolved or still open,
+429 too many wrong PINs, 503 no camera model loaded. Unexpected failures are 500 JSON, never a dropped call.
 """
 from __future__ import annotations
 
 import argparse
 import base64
 import json
+import re
 import socket
 from urllib.parse import parse_qs, urlparse
 import sys
@@ -84,25 +91,59 @@ class Handler(SimpleHTTPRequestHandler):
         return False
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path.startswith("/api/") and not self._authorized():
-            return None
+        try:
+            self._get()
+        except ApiError as exc:
+            self._json(exc.body, exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001 - answer 500, keep serving
+            self._fail(exc)
+
+    def do_POST(self) -> None:  # noqa: N802
+        try:
+            self._post()
+        except ApiError as exc:
+            self._json(exc.body, exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001 - answer 500, keep serving
+            self._fail(exc)
+
+    def _fail(self, exc: BaseException) -> None:
+        import traceback
+
+        print(f"[server] {self.command} {self.path.split('?')[0]} failed: {exc!r}\n{traceback.format_exc()}", file=sys.stderr)
+        try:
+            self._json({"error": f"server error: {type(exc).__name__}"}, 500)
+        except OSError:
+            pass
+
+    def _get(self) -> None:
         url = urlparse(self.path)
+        if url.path.startswith("/api/") and not self._authorized():
+            return None
         if url.path == "/api/resident":
-            return self._json(ENGINE.resident_detail(parse_qs(url.query).get("id", [""])[0]))
+            rid = parse_qs(url.query).get("id", [""])[0]
+            if not rid:
+                raise ApiError(400, "id is required, e.g. /api/resident?id=R-07")
+            return self._json(_checked(ENGINE.resident_detail(rid)))
         if url.path == "/api/settings":
             return self._json(ENGINE.settings())
         if url.path == "/api/health":
             return self._json(_health(PAIRING.is_local(self.client_address[0])))
-        if self.path == "/api/state":
+        if url.path == "/api/state":
             view = ENGINE.view()
             if PAIRING.is_local(self.client_address[0]):
                 # Only the laptop itself sees the PIN, to show it on the nurse-station screen.
                 view["pairing"] = {"pin": PAIRING.pin, "devices": PAIRING.devices}
             return self._json(view)
-        if self.path == "/api/report":
+        if url.path == "/api/report":
             return self._json(ENGINE.report())
-        if self.path == "/api/bench":
+        if url.path == "/api/bench":
             return self._json(_bench_runs() | {"job": {k: v for k, v in BENCH_JOB.items() if k != "cmd"}})
+        if url.path.startswith("/api/"):
+            raise ApiError(404, f"no such API route: GET {url.path}")
         if self.path in ("", "/"):
             self.send_response(302)
             self.send_header("Location", "/home/" if (HERE / "web" / "home" / "index.html").exists() else "/dashboard/")
@@ -110,53 +151,57 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         return super().do_GET()
 
-    def do_POST(self) -> None:  # noqa: N802
+    def _read_body(self, path: str) -> dict[str, object]:
+        """JSON object bodies only, size-capped (2 MB for camera frames, 64 KB otherwise)."""
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        except json.JSONDecodeError:
-            return self._json({"error": "bad json"}, 400)
-        if self.path == "/api/pair":
-            ok, result = PAIRING.pair(self.client_address[0], str(body.get("pin", "")), str(body.get("name", "phone")))
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ApiError(400, "bad Content-Length") from None
+        cap = MAX_FRAME_BODY if path == "/api/frame" else MAX_BODY
+        if length < 0:
+            raise ApiError(400, "bad Content-Length")
+        if length > cap:
+            self.close_connection = True
+            if length <= 16 * 1024 * 1024:   # drain it, so the client reads our 413 instead of a broken pipe
+                left = length
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+            raise ApiError(413, f"request body too large ({length} bytes, limit {cap})")
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            # Also what stops another web page in the laptop's browser from posting here: a cross-site
+            # application/json request needs a CORS preflight, which this server never grants.
+            raise ApiError(415, "send JSON with Content-Type: application/json")
+        raw = self.rfile.read(length) if length else b""
+        try:
+            body = json.loads(raw or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            raise ApiError(400, "bad json") from None
+        if not isinstance(body, dict):
+            raise ApiError(400, "the body must be a JSON object")
+        return body
+
+    def _post(self) -> None:
+        path = urlparse(self.path).path
+        body = self._read_body(path)
+        if path == "/api/pair":
+            pin, name = v_str(body, "pin", 12, required=True), v_str(body, "name", 40, default="phone") or "phone"
+            ok, result = PAIRING.pair(self.client_address[0], pin, name)
             if ok:
-                ENGINE.log("pairing", f"New device paired: {str(body.get('name', 'phone'))[:40]}")
+                ENGINE.log("pairing", f"New device paired: {name}")
                 return self._json({"token": result})
-            return self._json({"error": result}, 403)
+            return self._json({"error": result}, 429 if result.startswith("too many") else 403)
         if not self._authorized():
             return None
-        try:
-            if self.path == "/api/sensor":
-                out = ENGINE.sensor(body)
-            elif self.path == "/api/ack":
-                out = ENGINE.ack(int(body["alert"]), str(body.get("by", "Staff")))
-            elif self.path == "/api/resolve":
-                out = ENGINE.resolve(int(body["alert"]), str(body.get("outcome", "Resolved")))
-            elif self.path == "/api/clock":
-                ENGINE.set_time(str(body["time"]), float(body["speed"]) if "speed" in body else None)
-                out = {"ok": True}
-            elif self.path == "/api/frame":
-                out = _frame(body)
-            elif self.path == "/api/camera/config":
-                out = _camera_config(body)
-            elif self.path == "/api/scenario":
-                out = ENGINE.run_scenario(str(body.get("name")))
-            elif self.path == "/api/record":
-                out = ENGINE.confirm_record(int(body["alert"]), str(body.get("affect", "")), str(body.get("intervention", "")),
-                                            body.get("nondrug_alt") or None, str(body.get("note", "")), str(body.get("by", "Staff")))
-            elif self.path == "/api/bench/run":
-                if not PAIRING.is_local(self.client_address[0]):
-                    return self._json({"error": "benchmarks can only be started on the laptop"}, 403)
-                out = _bench_run(body)
-            elif self.path == "/api/backup":
-                out = ENGINE.request_backup(int(body["alert"]), str(body.get("by", "Staff")))
-            elif self.path == "/api/settings":
-                if not PAIRING.is_local(self.client_address[0]):
-                    return self._json({"error": "settings can only be changed on the nurse-station laptop"}, 403)
-                out = ENGINE.apply_settings(body, SETTINGS_FILE)
-            else:
-                return self._json({"error": "not found"}, 404)
-        except (KeyError, ValueError) as exc:
-            return self._json({"error": f"bad request: {exc}"}, 400)
-        return self._json(out)
+        route = ROUTES.get(path)
+        if route is None:
+            raise ApiError(404, f"no such API route: POST {path}")
+        if path in LAPTOP_ONLY and not PAIRING.is_local(self.client_address[0]):
+            raise ApiError(403, LAPTOP_ONLY[path])
+        return self._json(route(body))
 
     def _json(self, data: object, status: int = 200) -> None:
         payload = json.dumps(data).encode()
@@ -166,6 +211,242 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(payload)
+
+
+MAX_BODY = 64 * 1024
+MAX_FRAME_BODY = 2 * 1024 * 1024
+IDENT = re.compile(r"^[A-Za-z0-9_.-]{1,24}$")
+_MISSING = object()
+
+
+class ApiError(Exception):
+    """An error with an HTTP status; the body always has "error" (what pages already read)."""
+
+    def __init__(self, status: int, message: str, **extra: object) -> None:
+        super().__init__(message)
+        self.status, self.body = status, {"error": message, **extra}
+
+
+def _get(body: dict[str, object], key: str, required: bool, default: object) -> object:
+    v = body.get(key, _MISSING)
+    if v is _MISSING or (v is None and not required):
+        if required:
+            raise ApiError(400, f"{key} is required")
+        return default
+    return v
+
+
+def v_int(body: dict[str, object], key: str, lo: int = 1, hi: int = 10**9, required: bool = True,
+          default: int | None = None) -> int | None:
+    v = _get(body, key, required, default)
+    if v is default and not required:
+        return default
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        raise ApiError(400, f"{key} must be a whole number")
+    try:
+        f = float(v)
+    except ValueError:
+        raise ApiError(400, f"{key} must be a whole number") from None
+    if f != f or f != int(f):
+        raise ApiError(400, f"{key} must be a whole number")
+    if not lo <= f <= hi:
+        raise ApiError(400, f"{key} must be between {lo} and {hi}")
+    return int(f)
+
+
+def v_num(body: dict[str, object], key: str, lo: float, hi: float, required: bool = True,
+          default: float | None = None) -> float | None:
+    v = _get(body, key, required, default)
+    if v is default and not required:
+        return default
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        raise ApiError(400, f"{key} must be a number")
+    try:
+        f = float(v)
+    except ValueError:
+        raise ApiError(400, f"{key} must be a number") from None
+    if not lo <= f <= hi:   # also rejects NaN
+        raise ApiError(400, f"{key} must be between {lo:g} and {hi:g}")
+    return f
+
+
+def v_str(body: dict[str, object], key: str, maxlen: int, required: bool = False, default: str = "") -> str:
+    v = _get(body, key, required, default)
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        v = str(v)
+    if not isinstance(v, str):
+        raise ApiError(400, f"{key} must be text")
+    v = v.strip()
+    if required and not v:
+        raise ApiError(400, f"{key} is required")
+    if len(v) > maxlen:
+        raise ApiError(400, f"{key} is longer than {maxlen} characters")
+    return v
+
+
+def v_by(body: dict[str, object], default: str) -> str:
+    """Who did it: shown in the log and care record. Long names are cut to 40 characters, not refused."""
+    return v_str(body, "by", 200, default=default)[:40] or default
+
+
+def v_id(body: dict[str, object], key: str, required: bool = True, default: str | None = None) -> str | None:
+    v = _get(body, key, required, default)
+    if v is default and not required:
+        return default
+    if not isinstance(v, str) or not IDENT.match(v):
+        raise ApiError(400, f"{key} must be an id (1-24 letters, digits, - _ .)")
+    return v
+
+
+def v_bool(body: dict[str, object], key: str, required: bool = True, default: bool | None = None) -> bool | None:
+    v = _get(body, key, required, default)
+    if v is default and not required:
+        return default
+    if isinstance(v, bool):
+        return v
+    if v in (0, 1):
+        return bool(v)
+    if isinstance(v, str) and v.lower() in ("true", "false"):
+        return v.lower() == "true"
+    raise ApiError(400, f"{key} must be true or false")
+
+
+def v_choice(body: dict[str, object], key: str, choices: tuple[str, ...], required: bool = True,
+             default: str | None = None) -> str | None:
+    v = _get(body, key, required, default)
+    if v is default and not required:
+        return default
+    if v not in choices:
+        raise ApiError(400, f"{key} must be one of {', '.join(choices)}")
+    return v  # type: ignore[return-value]
+
+
+def v_numbers(body: dict[str, object], key: str, n: int, lo: float, hi: float) -> list[float]:
+    v = body.get(key)
+    if not isinstance(v, list) or len(v) != n:
+        raise ApiError(400, f"{key} must be a list of {n} numbers")
+    return [v_num({key: x}, key, lo, hi) for x in v]  # type: ignore[misc]
+
+
+def _checked(out: dict[str, object]) -> dict[str, object]:
+    """Engine results carry {"error": ...}; turn them into consistent HTTP statuses."""
+    err = out.get("error") if isinstance(out, dict) else None
+    if not err:
+        return out
+    msg = str(err)
+    low = msg.lower()
+    status = 404 if low.startswith(("unknown", "no such")) else 409 if ("already" in low or "still open" in low) else 400
+    raise ApiError(status, msg, **{k: v for k, v in out.items() if k != "error"})
+
+
+SENSOR_TYPES = ("door", "bed", "hr", "motion", "location")
+
+
+def r_sensor(body: dict[str, object]) -> dict[str, object]:
+    kind = v_choice(body, "type", SENSOR_TYPES)
+    if kind == "door":
+        ev: dict[str, object] = {"type": "door", "exit": v_id(body, "exit"), "open": v_bool(body, "open", False, True)}
+    else:
+        ev = {"type": kind, "resident": v_id(body, "resident")}
+        if kind == "bed":
+            ev["in_bed"] = v_bool(body, "in_bed")
+        elif kind == "hr":
+            ev["bpm"] = v_num(body, "bpm", 20, 250)
+        elif kind == "motion":
+            ev["level"] = v_num(body, "level", 0, 1)
+        else:
+            ev["zone"] = v_id(body, "zone")
+            ex = v_id(body, "exit", required=False)
+            if ex:
+                ev["exit"] = ex
+    return _checked(ENGINE.sensor(ev))
+
+
+def r_ack(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.ack(v_int(body, "alert"), v_by(body, "Staff")))  # type: ignore[arg-type]
+
+
+def r_resolve(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.resolve(v_int(body, "alert"), v_str(body, "outcome", 200, default="Resolved") or "Resolved"))  # type: ignore[arg-type]
+
+
+def r_clock(body: dict[str, object]) -> dict[str, object]:
+    t = v_str(body, "time", 5, required=True)
+    m = re.match(r"^(\d{1,2}):(\d{2})$", t)
+    if not m or int(m[1]) > 23 or int(m[2]) > 59:
+        raise ApiError(400, "time must be HH:MM, e.g. 02:08")
+    ENGINE.set_time(t, v_num(body, "speed", 0.1, 3600, required=False))
+    return {"ok": True}
+
+
+def r_scenario(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.run_scenario(v_str(body, "name", 40, required=True)))
+
+
+def r_record(body: dict[str, object]) -> dict[str, object]:
+    alt = v_str(body, "nondrug_alt", 60) or None
+    return _checked(ENGINE.confirm_record(v_int(body, "alert"), v_str(body, "affect", 60), v_str(body, "intervention", 60),  # type: ignore[arg-type]
+                                          alt, v_str(body, "note", 500), v_by(body, "Staff")))
+
+
+def r_backup(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.request_backup(v_int(body, "alert"), v_by(body, "Staff")))  # type: ignore[arg-type]
+
+
+def r_settings(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.apply_settings(body, SETTINGS_FILE))
+
+
+def r_bench(body: dict[str, object]) -> dict[str, object]:
+    clean = {"kind": v_choice(body, "kind", ("detector", "pattern"), required=False, default="pattern"),
+             "seconds": v_num(body, "seconds", 1, 600, required=False, default=10)}
+    out = _bench_run(clean)
+    if out.get("error"):
+        raise ApiError(409 if "already" in str(out["error"]) else 503, str(out["error"]))
+    return out
+
+
+def r_frame(body: dict[str, object]) -> dict[str, object]:
+    cam = v_id(body, "camera", required=False, default="hall12")
+    v_str(body, "jpeg", MAX_FRAME_BODY, required=True)
+    if body.get("roi") is not None:
+        x0, y0, size = v_numbers(body, "roi", 3, -1, 2)
+        if size <= 0:
+            raise ApiError(400, "roi size must be above 0")
+    if DETECTOR is None:
+        raise ApiError(503, "no camera model loaded: start the server with --camera-model")
+    with ENGINE.lock:
+        if cam not in ENGINE.cameras:
+            raise ApiError(404, f"unknown camera {cam!r}")
+    return _frame({**body, "camera": cam})
+
+
+def r_camera_config(body: dict[str, object]) -> dict[str, object]:
+    cam = v_id(body, "camera", required=False, default="hall12")
+    with ENGINE.lock:
+        if cam not in ENGINE.cameras:
+            raise ApiError(404, f"unknown camera {cam!r}")
+    clean: dict[str, object] = {"camera": cam, "by": v_by(body, "staff")}
+    if "enabled" in body:
+        clean["enabled"] = v_bool(body, "enabled")
+    if "schedule" in body:
+        clean["schedule"] = v_choice(body, "schedule", ("always", "night"))
+    if "line" in body or not ("enabled" in clean or "schedule" in clean):
+        line = None if body.get("line") is None else v_numbers(body, "line", 4, -1, 2)
+        if line and line[:2] == line[2:]:
+            raise ApiError(400, "line needs two different points")
+        clean["line"] = line
+        clean["inside"] = v_int(body, "inside", -1, 1, required=False, default=1)
+        if clean["inside"] == 0:
+            raise ApiError(400, "inside must be 1 or -1")
+    return _checked(_camera_config(clean))
+
+
+ROUTES = {"/api/sensor": r_sensor, "/api/ack": r_ack, "/api/resolve": r_resolve, "/api/clock": r_clock,
+          "/api/frame": r_frame, "/api/camera/config": r_camera_config, "/api/scenario": r_scenario,
+          "/api/record": r_record, "/api/bench/run": r_bench, "/api/backup": r_backup, "/api/settings": r_settings}
+LAPTOP_ONLY = {"/api/bench/run": "benchmarks can only be started on the laptop",
+               "/api/settings": "settings can only be changed on the nurse-station laptop"}
 
 
 BENCH_KEYS = ("label", "pte", "pte_mb", "load_rss_mb", "calls", "per_s", "p50_ms", "p95_ms", "p99_ms",
@@ -294,10 +575,19 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
     if not active:
         # Camera is off (or outside its schedule): the frame is dropped without being decoded or analysed.
         return {"paused": True, "reason": why, "tracks": [], "crossings": [], "people": 0}
-    jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
-    with DETECT_LOCK:
-        boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
-    del jpeg
+    try:
+        jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1], validate=True)
+    except ValueError:
+        raise ApiError(400, "jpeg must be base64 (optionally a data: URL)") from None
+    if not jpeg:
+        raise ApiError(400, "jpeg is empty")
+    try:
+        with DETECT_LOCK:
+            boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
+    except (OSError, ValueError, SyntaxError) as exc:   # PIL can't read it
+        raise ApiError(400, f"could not read this image ({type(exc).__name__})") from None
+    finally:
+        del jpeg
     roi = body.get("roi")
     if roi:
         # The page sent a zoomed-in crop around the doorway: map boxes back to full-frame coordinates,
