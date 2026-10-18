@@ -53,3 +53,12 @@ def test_phone_must_pair_before_seeing_or_answering_alerts(base) -> None:  # typ
     remote["on"] = False                                         # now act as the laptop itself
     status, state = call(url + "/api/state")
     assert status == 200 and state["pairing"] == {"pin": "246810", "devices": 1}
+
+
+def test_settings_can_only_be_changed_on_the_laptop(base) -> None:  # type: ignore[no-untyped-def]
+    url, remote = base
+    _, out = call(url + "/api/pair", {"pin": "246810", "name": "phone"})
+    status, body = call(url + "/api/settings", {"facility": "x"}, token=out["token"])
+    assert status == 403 and "laptop" in body["error"]
+    status, health = call(url + "/api/health", token=out["token"])
+    assert status == 200 and "phones" not in health          # phones never get the PIN/address

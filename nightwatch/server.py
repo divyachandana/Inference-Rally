@@ -12,6 +12,11 @@ API (JSON):
                         then send header X-NightWatch-Token on every /api/ call. The laptop itself is trusted.)
     GET  /api/state
     GET  /api/bench     benchmark runs from nightwatch/bench/benchmark.py (newest first)
+    GET  /api/resident?id=R-07   profile, now, last 30 min history, tonight's alerts
+    GET  /api/settings  /  POST /api/settings (laptop only; saved to git-ignored data/facility.local.json)
+    GET  /api/health    models, cameras, uptime; plus phone PIN/address for the laptop itself
+    POST /api/record    {"alert", "affect", "intervention", "nondrug_alt"?, "note"?, "by"}  file a care record
+    POST /api/backup    {"alert", "by"}  ask for help: all staff phones alerted
     GET  /api/report    the night's shift report (every alert, response times, severity, draft care records)
     POST /api/sensor    {"type": "door", "exit": "front", "open": true}
                         {"type": "bed" | "hr" | "motion" | "location", "resident": "R-07", ...}
@@ -28,6 +33,8 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import socket
+from urllib.parse import parse_qs, urlparse
 import sys
 import threading
 import time
@@ -66,6 +73,13 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path.startswith("/api/") and not self._authorized():
             return None
+        url = urlparse(self.path)
+        if url.path == "/api/resident":
+            return self._json(ENGINE.resident_detail(parse_qs(url.query).get("id", [""])[0]))
+        if url.path == "/api/settings":
+            return self._json(ENGINE.settings())
+        if url.path == "/api/health":
+            return self._json(_health(PAIRING.is_local(self.client_address[0])))
         if self.path == "/api/state":
             view = ENGINE.view()
             if PAIRING.is_local(self.client_address[0]):
@@ -78,7 +92,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(_bench_runs())
         if self.path in ("", "/"):
             self.send_response(302)
-            self.send_header("Location", "/dashboard/")
+            self.send_header("Location", "/home/" if (HERE / "web" / "home" / "index.html").exists() else "/dashboard/")
             self.end_headers()
             return None
         return super().do_GET()
@@ -112,6 +126,15 @@ class Handler(SimpleHTTPRequestHandler):
                 out = _camera_config(body)
             elif self.path == "/api/scenario":
                 out = ENGINE.run_scenario(str(body.get("name")))
+            elif self.path == "/api/record":
+                out = ENGINE.confirm_record(int(body["alert"]), str(body.get("affect", "")), str(body.get("intervention", "")),
+                                            body.get("nondrug_alt") or None, str(body.get("note", "")), str(body.get("by", "Staff")))
+            elif self.path == "/api/backup":
+                out = ENGINE.request_backup(int(body["alert"]), str(body.get("by", "Staff")))
+            elif self.path == "/api/settings":
+                if not PAIRING.is_local(self.client_address[0]):
+                    return self._json({"error": "settings can only be changed on the nurse-station laptop"}, 403)
+                out = ENGINE.apply_settings(body, SETTINGS_FILE)
             else:
                 return self._json({"error": "not found"}, 404)
         except (KeyError, ValueError) as exc:
@@ -148,6 +171,38 @@ def _bench_runs(limit: int = 12) -> dict[str, object]:
                      "results": [{k: r.get(k) for k in BENCH_KEYS if k in r} for r in d.get("results", [])],
                      "notes": d.get("notes", [])})
     return {"runs": runs}
+
+
+SETTINGS_FILE = HERE.parent / "data" / "facility.local.json"   # git-ignored
+STARTED = time.time()
+LAN = {"on": False, "port": 8000}
+
+
+def _lan_ip() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))   # no packet is sent; picks the outgoing interface
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def _health(local: bool) -> dict[str, object]:
+    """What's running: for the home page. The PIN and phone address only go to the laptop itself."""
+    out: dict[str, object] = {
+        "uptime_s": round(time.time() - STARTED),
+        "pattern_model": {"name": ENGINE.scorer.name, "device": ENGINE.scorer.device},  # type: ignore[attr-defined]
+        "camera_model": {"name": DETECTOR.name, "device": DETECTOR.device} if DETECTOR else None,  # type: ignore[attr-defined]
+        "cameras": [{"id": c["id"], "label": c["label"], "enabled": c["enabled"], "schedule": c["schedule"],
+                     "live": time.time() - c["last_frame"] < 3} for c in ENGINE.cameras.values()],
+        "lan": LAN["on"], "facility": ENGINE.facility, "settings_file": ENGINE.facility_path.name,
+        "tests": "python -m pytest -q tests",
+    }
+    if local:
+        ip = _lan_ip() if LAN["on"] else None
+        out["phones"] = {"pin": PAIRING.pin, "paired": PAIRING.devices,
+                         "url": f"http://{ip}:{LAN['port']}/staff/" if ip else None}
+    return out
 
 
 def _tracker(cam: str) -> Tracker:
@@ -227,7 +282,11 @@ def main() -> None:
     p.add_argument("--unpair-all", action="store_true", help="forget every paired phone")
     args = p.parse_args()
 
-    ENGINE = Engine(args.facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
+    facility = args.facility
+    if facility == HERE / "demo" / "facility.json" and SETTINGS_FILE.exists():
+        facility = SETTINGS_FILE   # settings edited on this laptop win over the demo file
+    ENGINE = Engine(facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
+    LAN.update(on=args.lan, port=args.port)
     PAIRING = Pairing(HERE.parent / "logs" / "paired_devices.json", args.pin)
     if args.unpair_all:
         PAIRING.unpair_all()

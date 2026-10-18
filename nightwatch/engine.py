@@ -22,7 +22,17 @@ from typing import Callable
 
 from features import vector
 
-NIGHT_START, NIGHT_END = 21, 5   # matches the care records' night band (21:00-05:00)
+NIGHT_START, NIGHT_END = 21, 5   # default night band, matches the care records (21:00-05:00); configurable
+HISTORY_EVERY_S = 5              # resident history sample period (360 samples = 30 min)
+
+# The care team's own pick-lists (taxonomy v2), so confirmed records drop straight into their format.
+TAXONOMY: dict[str, list[str]] = {
+    "affect": ["Calm", "Unsettled-agitated", "Distressed-tearful", "Drowsy", "Withdrawn", "Confused-disoriented",
+               "Content-engaged"],
+    "intervention": ["Reassurance", "Reorientation", "Music/sensory", "Repositioning", "Presence / 1-to-1",
+                     "Direct care provided", "Clinical review"],
+    "nondrug_alt": ["Music", "Movement", "Sensory", "Cognitive", "Family involvement", "Diet/hydration"],
+}
 SEVERITY = {1: "routine", 2: "notable", 3: "escalation"}
 CAMERA_CONFIRM_FRAMES = 3        # consecutive frames with a person before we believe it (~0.75 s)  # the care team's derived severity scale
 UNUSUAL_ALERT = 0.9              # model score that counts as "unusual for right now"
@@ -48,6 +58,7 @@ class Resident:
     up_since: float | None = None   # virtual epoch seconds
     unusual: float = 0.0
     unusual_streak: int = 0
+    history: deque = field(default_factory=lambda: deque(maxlen=360))  # (clock, unusual, hr, zone, in_bed)
     quiet_until: float = 0.0       # real time; staff are with the resident, no new heads-ups
     last_exit: str | None = None
 
@@ -82,6 +93,7 @@ class Alert:
     history: list[tuple[str, str]] = field(default_factory=list)
     contact_step: int = 0
     max_level: int = 0
+    backup_by: str | None = None
     went_outside: bool = False
     record: dict[str, object] | None = None
 
@@ -105,6 +117,8 @@ class Engine:
             spec = json.loads(self.facility_path.read_text())
             self.facility = spec["facility"]
             self.night_staff = spec["night_staff"]
+            self.night_start, self.night_end = spec.get("night_hours", [NIGHT_START, NIGHT_END])
+            self._ticks = 0
             self.outside_temp_c = spec["outside_temp_c"]
             self.residents = {r["id"]: Resident(**r) for r in spec["residents"]}
             self.exits = {e["id"]: Exit(**e) for e in spec["exits"]}
@@ -137,7 +151,9 @@ class Engine:
 
     def is_night(self) -> bool:
         h = self.clock().hour
-        return h >= NIGHT_START or h < NIGHT_END
+        if self.night_start > self.night_end:              # e.g. 21:00 -> 05:00 crosses midnight
+            return h >= self.night_start or h < self.night_end
+        return self.night_start <= h < self.night_end
 
     def stamp(self) -> str:
         return self.clock().strftime("%H:%M:%S")
@@ -415,6 +431,7 @@ class Engine:
             "severity": severity,
             "severity_label": SEVERITY[severity],
             "draft_by": "NightWatch: confirm affect and intervention before filing",
+            "status": "draft",
         }
 
     # ------------------------------------------------------------------ the 1 s loop
@@ -428,11 +445,14 @@ class Engine:
                 x = vector(hour, not r.in_bed, r.motion, r.hr, r.hr_rest, r.zone, minutes_up)
                 r.unusual, ms = self.scorer.score(x)  # type: ignore[attr-defined]
                 self.latencies.append(ms)
+                if self._ticks % HISTORY_EVERY_S == 0:
+                    r.history.append((self.clock().strftime("%H:%M:%S"), round(r.unusual, 3), r.hr, r.zone, r.in_bed))
                 r.unusual_streak = r.unusual_streak + 1 if (night and not r.in_bed and r.unusual >= UNUSUAL_ALERT) else 0
                 if r.unusual_streak >= SUSTAIN_S and r.zone != "outside" and time.time() >= r.quiet_until:
                     if self._open_alert_for(r, None) is None:
                         hr = f", heart rate {r.hr:.0f} (rest {r.hr_rest:.0f})" if r.hr else ""
                         self._raise(1, f"{r.name} is up at {self.clock():%H:%M}, unusual for them{hr}", r, None)
+            self._ticks += 1
             now = time.time()
             for a in self.alerts:
                 if a.resolved:
@@ -453,6 +473,82 @@ class Engine:
                 elif a.level == 3 and waited >= self.ack_timeout:
                     self._contact(a)
 
+    # ------------------------------------------------------------------ staff actions
+
+    def confirm_record(self, alert_id: int, affect: str, intervention: str, nondrug_alt: str | None,
+                       note: str, by: str) -> dict[str, object]:
+        """Staff confirm the two fields the system can't know, and file the record."""
+        with self.lock:
+            a = next((x for x in self.alerts if x.id == alert_id), None)
+            if a is None or not a.record:
+                return {"error": "no closed alert with a draft record"}
+            if affect not in TAXONOMY["affect"]:
+                return {"error": f"affect must be one of {TAXONOMY['affect']}"}
+            if intervention not in TAXONOMY["intervention"]:
+                return {"error": f"intervention must be one of {TAXONOMY['intervention']}"}
+            if nondrug_alt and nondrug_alt not in TAXONOMY["nondrug_alt"]:
+                return {"error": f"nondrug_alt must be one of {TAXONOMY['nondrug_alt']}"}
+            a.record.update({"affect": affect, "intervention": intervention, "nondrug_alt": nondrug_alt or None,
+                             "note": note.strip()[:500] or None, "status": "filed", "confirmed_by": by[:40],
+                             "confirmed_at": self.stamp()})
+            a.record.pop("draft_by", None)
+            self.log("record", f"Care record for alert #{a.id} filed by {by[:40]}")
+            return {"ok": True, "record": a.record}
+
+    def request_backup(self, alert_id: int, by: str) -> dict[str, object]:
+        """A responder asks for help: every staff phone is alerted, at least at urgent level."""
+        with self.lock:
+            a = next((x for x in self.alerts if x.id == alert_id and not x.resolved), None)
+            if a is None:
+                return {"error": "no such open alert"}
+            if a.level < 2:
+                self._set_level(a, 2, f"backup requested by {by[:40]}")
+            a.backup_by = by[:40]
+            a.history.append((self.stamp(), f"Backup requested by {by[:40]}: all staff phones alerted"))
+            self.log("contact", f"Alert #{a.id}: backup requested by {by[:40]}")
+            return {"ok": True}
+
+    def resident_detail(self, rid: str) -> dict[str, object]:
+        with self.lock:
+            r = self.residents.get(rid)
+            if r is None:
+                return {"error": f"unknown resident {rid!r}"}
+            return {
+                "id": r.id, "name": r.name, "room": r.room, "risk": r.wander_risk, "hr_rest": r.hr_rest,
+                "pattern": r.pattern, "description": r.description, "suggestions": r.suggestions(),
+                "now": {"in_bed": r.in_bed, "zone": r.zone, "hr": r.hr, "unusual": round(r.unusual, 3),
+                        "minutes_up": None if r.up_since is None else round((self.now() - r.up_since) / 60, 1)},
+                "history": [{"t": t, "unusual": u, "hr": hr, "zone": z, "in_bed": b} for t, u, hr, z, b in r.history],
+                "alerts": [self._alert_view(a) for a in self.alerts if a.resident == rid],
+            }
+
+    # ------------------------------------------------------------------ settings (laptop only)
+
+    def settings(self) -> dict[str, object]:
+        with self.lock:
+            spec = json.loads(self.facility_path.read_text())
+            spec.setdefault("night_hours", [NIGHT_START, NIGHT_END])
+            spec["timeouts"] = {"l1": self.l1_timeout, "ack": self.ack_timeout}
+            spec["source"] = self.facility_path.name
+            return spec
+
+    def apply_settings(self, new: dict[str, object], save_to: Path) -> dict[str, object]:
+        """Validate, save to a local (git-ignored) file, and restart the night with it."""
+        try:
+            spec = validate_settings(new)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        timeouts = spec.pop("timeouts", None)
+        save_to.parent.mkdir(parents=True, exist_ok=True)
+        save_to.write_text(json.dumps(spec, indent=2))
+        with self.lock:
+            if timeouts:
+                self.l1_timeout, self.ack_timeout = float(timeouts["l1"]), float(timeouts["ack"])
+            self.facility_path = save_to
+            self.reset()
+            self.log("settings", "Settings saved and applied (alerts cleared)")
+        return {"ok": True}
+
     # ------------------------------------------------------------------ view
 
     def view(self) -> dict[str, object]:
@@ -467,6 +563,8 @@ class Engine:
                            "p50_ms": round(lat[len(lat) // 2], 3) if lat else None,
                            "p95_ms": round(lat[int(len(lat) * 0.95)], 3) if lat else None},
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
+                "night_hours": [self.night_start, self.night_end],
+                "taxonomy": TAXONOMY,
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
                              "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway"),
                              "tracks": c.get("tracks", []) if time.time() - c["last_frame"] < 3 else [],
@@ -510,7 +608,9 @@ class Engine:
                            "reached_emergency": sum(1 for a in self.alerts if a.max_level >= 3),
                            "went_outside": sum(1 for a in self.alerts if a.went_outside),
                            "settled_on_their_own": sum(1 for a in self.alerts if a.record and a.record["intervention"] == "Monitoring"),
-                           "visits_logged": self.visits_today},
+                           "visits_logged": self.visits_today,
+                           "records_filed": sum(1 for a in self.alerts if a.record and a.record.get("status") == "filed"),
+                           "records_draft": sum(1 for a in self.alerts if a.record and a.record.get("status") == "draft")},
                 "response_s": {"median": acked[len(acked) // 2] if acked else None, "max": acked[-1] if acked else None,
                                "count": len(acked)},
                 "severity": sev,
@@ -530,7 +630,7 @@ class Engine:
                 "escalates_in_s": due, "history": a.history,
                 "description": r.description if r else None, "room": r.room if r else None,
                 "suggestions": r.suggestions()[:2] if r else [],
-                "max_level": a.max_level, "record": a.record}
+                "max_level": a.max_level, "record": a.record, "backup_by": a.backup_by}
 
     # ------------------------------------------------------------------ scripted demo scenarios
 
@@ -638,3 +738,100 @@ SCENARIOS: dict[str, list[tuple[float, Callable[[Engine], object]]]] = {
     ],
     "reset": [(0, lambda e: e.reset())],
 }
+
+
+def _num(v: object, lo: float, hi: float, what: str) -> float:
+    try:
+        f = float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} must be a number") from None
+    if not lo <= f <= hi:
+        raise ValueError(f"{what} must be between {lo:g} and {hi:g}")
+    return f
+
+
+def _text(v: object, n: int, what: str, required: bool = True) -> str:
+    t = str(v or "").strip()
+    if required and not t:
+        raise ValueError(f"{what} is required")
+    if len(t) > n:
+        raise ValueError(f"{what} is longer than {n} characters")
+    return t
+
+
+def validate_settings(new: dict[str, object]) -> dict[str, object]:
+    """Strict check of an edited facility file; raises ValueError with a message staff can act on."""
+    import re
+
+    ident = re.compile(r"^[A-Za-z0-9-]{1,12}$")
+    out: dict[str, object] = {
+        "_note": "Edited on this laptop in /settings/. Local only (git-ignored data/).",
+        "facility": _text(new.get("facility"), 60, "Facility name"),
+        "night_staff": int(_num(new.get("night_staff"), 1, 50, "Night staff")),
+        "outside_temp_c": _num(new.get("outside_temp_c"), -50, 50, "Outside temperature"),
+    }
+    hours = new.get("night_hours") or [NIGHT_START, NIGHT_END]
+    out["night_hours"] = [int(_num(hours[0], 0, 23, "Night starts")), int(_num(hours[1], 0, 23, "Night ends"))]  # type: ignore[index]
+    if out["night_hours"][0] == out["night_hours"][1]:  # type: ignore[index]
+        raise ValueError("Night start and end can't be the same hour")
+    residents, seen = [], set()
+    for i, r in enumerate(new.get("residents") or []):  # type: ignore[union-attr]
+        rid = str(r.get("id", "")).strip()
+        if not ident.match(rid) or rid in seen:
+            raise ValueError(f"Resident {i + 1}: id must be unique, 1-12 letters/digits/dashes")
+        seen.add(rid)
+        helped = []
+        for h in (r.get("what_helped") or [])[:8]:
+            name, ok, tried = _text(h[0], 60, "What helped"), int(_num(h[1], 0, 999, "Times helped")), int(_num(h[2], 0, 999, "Times tried"))
+            if ok > tried:
+                raise ValueError(f"Resident {rid}: '{name}' helped more times than it was tried")
+            helped.append([name, ok, tried])
+        residents.append({
+            "id": rid, "name": _text(r.get("name") or f"Resident {rid}", 40, "Name"), "room": _text(r.get("room"), 8, "Room"),
+            "wander_risk": round(_num(r.get("wander_risk"), 0, 1, f"Resident {rid} wander risk"), 2),
+            "hr_rest": _num(r.get("hr_rest"), 30, 150, f"Resident {rid} resting heart rate"),
+            "pattern": _text(r.get("pattern"), 300, "Pattern", required=False),
+            "what_helped": helped,
+            "description": _text(r.get("description"), 120, "Description", required=False),
+            "x": _num(r.get("x", 100), 0, 560, "x"), "y": _num(r.get("y", 70), 0, 290, "y"),
+        })
+    if not residents:
+        raise ValueError("Add at least one resident")
+    out["residents"] = residents
+    exits, exit_ids = [], set()
+    for i, x in enumerate(new.get("exits") or []):  # type: ignore[union-attr]
+        xid = str(x.get("id", "")).strip()
+        if not ident.match(xid) or xid in exit_ids:
+            raise ValueError(f"Exit {i + 1}: id must be unique, 1-12 letters/digits/dashes")
+        exit_ids.add(xid)
+        kind = str(x.get("kind"))
+        if kind not in ("exterior_door", "window"):
+            raise ValueError(f"Exit {xid}: kind must be exterior_door or window")
+        exits.append({"id": xid, "label": _text(x.get("label"), 40, "Exit label"), "kind": kind,
+                      "short": _text(x.get("short") or x.get("label"), 24, "Short label"),
+                      "x": _num(x.get("x", 470), 0, 560, "x"), "y": _num(x.get("y", 250), 0, 290, "y")})
+    out["exits"] = exits
+    cams, cam_ids = [], set()
+    for i, c in enumerate(new.get("cameras") or []):  # type: ignore[union-attr]
+        cid = str(c.get("id", "")).strip()
+        if not ident.match(cid) or cid in cam_ids:
+            raise ValueError(f"Camera {i + 1}: id must be unique, 1-12 letters/digits/dashes")
+        cam_ids.add(cid)
+        zone = str(c.get("zone"))
+        if zone not in ("corridor", "exit"):
+            raise ValueError(f"Camera {cid}: zone must be corridor (outside a room) or exit")
+        res = c.get("resident") or None
+        if res is not None and res not in seen:
+            raise ValueError(f"Camera {cid}: resident {res} doesn't exist")
+        ex = c.get("exit") or None
+        if zone == "exit" and ex not in exit_ids:
+            raise ValueError(f"Camera {cid}: pick which exit it watches")
+        cam = {"id": cid, "label": _text(c.get("label"), 60, "Camera label"), "resident": res, "zone": zone}
+        if ex:
+            cam["exit"] = ex
+        cams.append(cam)
+    out["cameras"] = cams
+    t = new.get("timeouts")
+    if t:
+        out["timeouts"] = {"l1": _num(t.get("l1"), 5, 600, "Heads-up wait"), "ack": _num(t.get("ack"), 5, 600, "Urgent wait")}  # type: ignore[union-attr]
+    return out
