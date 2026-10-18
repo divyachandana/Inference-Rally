@@ -32,8 +32,8 @@ def _run(seed: int = 16) -> tuple[list[RaceEvent], dict[str, object]]:
 def test_every_racer_finishes_with_a_unique_place() -> None:
     events, results = _run()
     finishes = [e for e in events if e.type == "finish"]
-    assert sorted(e.place for e in finishes) == [1, 2, 3]
-    assert set(results) == {"gemma", "qwen", "gpu"}
+    assert sorted(e.place for e in finishes) == [1, 2]
+    assert set(results) == {"gemma", "qwen"}
 
 
 def test_event_stream_is_well_ordered() -> None:

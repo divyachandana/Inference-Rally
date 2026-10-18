@@ -35,10 +35,8 @@ qnn:
 
 active_profile: demo
 
-# The simulated GPU racer stands in for Gemma-4-E2B on the Adreno GPU. Its speed is an estimate
-# relative to the measured NPU runs (~170 ms to first token, ~12-14 tokens/s, ~17-token replies).
 profiles:
-  # DEMO mode: real Gemma and real Qwen3, both on the NPU, vs a simulated GPU racer.
+  # DEMO mode: real Gemma vs real Qwen3, both on the NPU.
   demo:
     - id: gemma
       name: Gemma-4-E2B
@@ -54,13 +52,6 @@ profiles:
       runtime: qnn
       color: "#3FA7D6"
       qnn_model: qwen
-    - id: gpu
-      name: Gemma-4-E2B
-      label: SIM GPU
-      device: GPU
-      runtime: simulated
-      color: "#7F77DD"
-      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [15, 25]}
 
   # PLAY mode: you (DC) vs real Gemma and real Qwen3 on the NPU.
   play:
@@ -85,7 +76,8 @@ profiles:
       color: "#3FA7D6"
       qnn_model: qwen
 
-  # Everything simulated: works on any machine, no NPU needed (UI work, tests).
+  # Everything simulated: works on any machine, no NPU needed (UI work, tests). Speeds are
+  # estimates from the measured NPU runs (~170 ms to first token, ~12-14 tokens/s alone).
   sim:
     - id: gemma
       name: Gemma-4-E2B
@@ -101,10 +93,3 @@ profiles:
       runtime: simulated
       color: "#3FA7D6"
       sim: {tps: 12.0, ttft_ms: 175, accuracy: 0.6, reply_tokens: [15, 25]}
-    - id: gpu
-      name: Gemma-4-E2B
-      label: SIM GPU
-      device: GPU
-      runtime: simulated
-      color: "#7F77DD"
-      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [15, 25]}

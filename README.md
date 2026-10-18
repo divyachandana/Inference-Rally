@@ -28,15 +28,14 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 | Mode | Racers | Needs |
 |---|---|---|
-| **DEMO** (default) | **Gemma-4-E2B** and **Qwen3-1.7B**, both on the Snapdragon NPU (real, ExecuTorch + QNN), vs a simulated GPU racer | the QNN bundle |
+| **DEMO** (default) | **Gemma-4-E2B** vs **Qwen3-1.7B**, both on the Snapdragon NPU (real, ExecuTorch + QNN) | the QNN bundle |
 | **PLAY** | **DC (you, arrow keys)** vs **Gemma-4-E2B** and **Qwen3-1.7B** on the NPU (both real) | the QNN bundle |
 
 Switch with **G** (or the MODE button). Lineups live in `racers.yaml` (`demo`, `play`, and `sim`, which
 is fully simulated and runs on any machine: `python -m inference_rally.server --profile sim`).
 
-The NPU racers are real models; the GPU racer is simulated with a speed estimated relative to the
-measured NPU runs (~170 ms to first token, ~12–14 tokens/s alone). Its HUD label says **SIM**. Both
-NPU models share the one NPU during a race, so each runs slower than it would alone (~8–9 tokens/s).
+DEMO and PLAY race only real models. Both share the one NPU during a race, so each runs slower than
+it would alone (~8–9 tokens/s instead of ~12–14). The `sim` profile's racers are labelled **SIM**.
 
 ## How the NPU racers work
 

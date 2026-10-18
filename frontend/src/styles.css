@@ -644,13 +644,6 @@ body {
   background: rgba(8, 10, 14, 0.9);
 }
 
-.podium-insight {
-  font-size: 11px;
-  color: var(--yellow);
-  padding: 10px 14px;
-  border: 3px solid var(--yellow);
-}
-
 .podium-winner {
   font-size: 40px;
   color: var(--racer);
