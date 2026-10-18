@@ -20,6 +20,8 @@ MATCH_DIST = 0.18       # fallback: feet within this distance count as the same 
 START_SCORE = 0.5       # confidence needed to start a track ...
 KEEP_SCORE = 0.3        # ... and the lower confidence that keeps an existing one alive
 TRAIL = 20
+CROSS_CONFIRM = 2       # frames on the new side before a crossing counts (no flicker at the line)
+VEL_SMOOTH = 0.5        # how fast the velocity estimate follows new motion
 
 
 @dataclass
@@ -31,6 +33,15 @@ class Track:
     misses: int = 0
     trail: list[tuple[float, float]] = field(default_factory=list)
     side: int = 0          # +1 inside the room, -1 outside, 0 unknown/on the line
+    vel: tuple[float, float] = (0.0, 0.0)   # box centre motion per frame (constant-velocity model)
+    pending: int = 0       # side we may be crossing to ...
+    pending_n: int = 0     # ... and for how many frames we've seen it
+
+    def predicted(self) -> list[float]:
+        """Where the box should be now, if the person kept moving (used for matching)."""
+        k = self.misses + 1
+        return [self.box[0] + self.vel[0] * k, self.box[1] + self.vel[1] * k,
+                self.box[2] + self.vel[0] * k, self.box[3] + self.vel[1] * k]
 
     @property
     def feet(self) -> tuple[float, float]:
@@ -84,10 +95,12 @@ class Tracker:
         unmatched = set(range(len(dets)))
         for t in sorted(self.tracks, key=lambda t: -t.hits):
             best, best_score = None, 0.0
+            guess = t.predicted()
+            guess_feet = ((guess[0] + guess[2]) / 2, guess[3])
             for i in unmatched:
                 b = [dets[i]["x1"], dets[i]["y1"], dets[i]["x2"], dets[i]["y2"]]
-                overlap = iou(t.box, b)
-                near = 1 - min(math.dist(t.feet, ((b[0] + b[2]) / 2, b[3])) / MATCH_DIST, 1)
+                overlap = max(iou(guess, b), iou(t.box, b))
+                near = 1 - min(math.dist(guess_feet, ((b[0] + b[2]) / 2, b[3])) / MATCH_DIST, 1)
                 score = overlap if overlap >= MATCH_IOU else (0.1 * near if near > 0 else 0)
                 if score > best_score:
                     best, best_score = i, score
@@ -96,7 +109,11 @@ class Tracker:
                 continue
             unmatched.discard(best)
             d = dets[best]
+            old_c = ((t.box[0] + t.box[2]) / 2, (t.box[1] + t.box[3]) / 2)
             t.box = [SMOOTH * n + (1 - SMOOTH) * o for n, o in zip((d["x1"], d["y1"], d["x2"], d["y2"]), t.box)]
+            new_c = ((t.box[0] + t.box[2]) / 2, (t.box[1] + t.box[3]) / 2)
+            step = ((new_c[0] - old_c[0]) / (t.misses + 1), (new_c[1] - old_c[1]) / (t.misses + 1))
+            t.vel = (VEL_SMOOTH * step[0] + (1 - VEL_SMOOTH) * t.vel[0], VEL_SMOOTH * step[1] + (1 - VEL_SMOOTH) * t.vel[1])
             t.score, t.hits, t.misses = d["score"], t.hits + 1, 0
         for i in unmatched:
             if dets[i]["score"] >= START_SCORE:
@@ -115,9 +132,17 @@ class Tracker:
             side = self.doorway.side(t.feet)
             if side == 0 or not self.doorway.spans(t.feet):
                 continue
-            if t.side and side != t.side:
-                events.append({"track": t.id, "direction": "out" if side < 0 else "in"})
-            t.side = side
+            if not t.side:
+                t.side = side
+            elif side == t.side:
+                t.pending, t.pending_n = 0, 0
+            else:
+                # Only believe a crossing once the feet stay on the new side for a couple of frames.
+                t.pending_n = t.pending_n + 1 if t.pending == side else 1
+                t.pending = side
+                if t.pending_n >= CROSS_CONFIRM:
+                    events.append({"track": t.id, "direction": "out" if side < 0 else "in"})
+                    t.side, t.pending, t.pending_n = side, 0, 0
         return events
 
     def view(self) -> list[dict[str, object]]:

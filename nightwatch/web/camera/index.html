@@ -77,6 +77,8 @@
         <div class="stat"><div class="k">Per frame</div><div class="v" id="ms">–</div></div>
         <div class="stat"><div class="k">Frames / s</div><div class="v" id="fps">–</div></div>
         <div class="stat"><div class="k">Frames stored</div><div class="v">0</div></div>
+        <div class="stat"><div class="k">Detection area</div><div class="v" id="area">Full</div></div>
+        <div class="stat"><div class="k">Night boost</div><div class="v" id="gain">Off</div></div>
       </div>
       <div class="privacy" style="margin-top:10px">Model <b id="model">–</b> on <b id="device">–</b></div>
     </div>
@@ -90,6 +92,8 @@
         <button class="warn" id="clear">Clear line</button>
       </div>
       <label class="toggle" style="margin-top:12px"><input type="checkbox" id="privacy" checked> Privacy view (blurred)</label>
+      <label class="toggle"><input type="checkbox" id="zoom" checked> Zoom on the doorway (sharper detection once the line is drawn)</label>
+      <label class="toggle"><input type="checkbox" id="boost" checked> Night boost (auto brightness / contrast for dark hallways)</label>
     </div>
     <div class="card">
       <h2>Doorway crossings</h2>
@@ -103,10 +107,12 @@
 </main>
 <video id="video" playsinline muted></video>
 <canvas id="grab" width="320" height="320"></canvas>
+<canvas id="full" width="960" height="960" style="display:none"></canvas>
 <script>
 const $ = (id) => document.getElementById(id);
 const V = 720, G = 320;
-const view = $('view').getContext('2d'), grab = $('grab').getContext('2d');
+const view = $('view').getContext('2d'), grab = $('grab').getContext('2d', { willReadFrequently: true });
+const full = $('full').getContext('2d'), FULL = 960;
 let running = false, tracks = [], door = null, drawing = null, sent = [], logRows = [];
 
 const load = () => { try { return JSON.parse(localStorage.getItem('nw-door-' + $('cam').value) || 'null'); } catch { return null; } };
@@ -125,6 +131,34 @@ function letterbox(ctx, video, size) {
   const w = vw * s, h = vh * s;
   ctx.fillStyle = '#111'; ctx.fillRect(0, 0, size, size);
   ctx.drawImage(video, (size - w) / 2, (size - h) / 2, w, h);
+}
+
+// Square crop around the doorway (in letterboxed-frame fractions), so people near the door appear
+// larger to the 320x320 detector. Falls back to the whole frame without a line.
+function roiFor() {
+  if (!door || !$('zoom').checked) return null;
+  const [x1, y1, x2, y2] = door.line;
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  const size = Math.min(1, Math.max(0.55, Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) * 1.9));
+  const x0 = Math.min(Math.max(0, cx - size / 2), 1 - size), y0 = Math.min(Math.max(0, cy - size / 2), 1 - size);
+  return [x0, y0, size];
+}
+
+// Auto levels for dark frames: stretch the 2nd-98th percentile of brightness to the full range and lift
+// shadows with a gamma. Returns the gain so the display can show the same boost.
+let lastGain = 1;
+function nightBoost(ctx, size) {
+  if (!$('boost').checked) { lastGain = 1; return; }
+  const img = ctx.getImageData(0, 0, size, size), d = img.data, hist = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 16) hist[(d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8]++;
+  const total = d.length / 16; let acc = 0, lo = 0, hi = 255;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc < total * 0.02) lo = v; if (acc < total * 0.98) hi = v; }
+  if (hi - lo > 200 && lo < 20) { lastGain = 1; return; }          // already well exposed
+  const span = Math.max(hi - lo, 64), gamma = hi < 110 ? 0.7 : 0.9, lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = 255 * Math.pow(Math.min(Math.max((v - lo) / span, 0), 1), gamma);
+  for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+  ctx.putImageData(img, 0, 0);
+  lastGain = 255 / span;
 }
 
 function roundRect(x, y, w, h, r) {
@@ -173,11 +207,21 @@ function drawTracks() {
 function render() {
   const v = $('video');
   if (v.readyState >= 2) {
-    view.filter = $('privacy').checked ? 'blur(16px) saturate(.4) brightness(.8)' : 'none';
+    const filters = [];
+    if ($('privacy').checked) filters.push('blur(16px) saturate(.4) brightness(.8)');
+    if (lastGain > 1) filters.push(`brightness(${Math.min(lastGain, 3).toFixed(2)}) contrast(1.15)`);  // show the night boost
+    view.filter = filters.join(' ') || 'none';
     letterbox(view, v, V);
     view.filter = 'none';
   } else {
     view.fillStyle = '#05080c'; view.fillRect(0, 0, V, V);
+  }
+  const roi = roiFor();
+  if (roi) {
+    view.strokeStyle = 'rgba(232,238,245,.35)'; view.lineWidth = 2; view.setLineDash([4, 6]);
+    view.strokeRect(roi[0] * V, roi[1] * V, roi[2] * V, roi[2] * V); view.setLineDash([]);
+    view.fillStyle = 'rgba(232,238,245,.55)'; view.font = '600 11px system-ui';
+    view.fillText('DETECTION ZONE', roi[0] * V + 8, roi[1] * V + 16);
   }
   drawDoor(); drawTracks();
   requestAnimationFrame(render);
@@ -195,10 +239,20 @@ function flash(dir, id) {
 async function loop() {
   const v = $('video');
   while (running) {
-    letterbox(grab, v, G);
-    const jpeg = $('grab').toDataURL('image/jpeg', 0.75);
+    const roi = roiFor();
+    if (roi) {
+      // Crop the doorway area from the letterboxed full frame at the detector's resolution.
+      letterbox(full, v, FULL);
+      grab.drawImage($('full'), roi[0] * FULL, roi[1] * FULL, roi[2] * FULL, roi[2] * FULL, 0, 0, G, G);
+    } else {
+      letterbox(grab, v, G);
+    }
+    nightBoost(grab, G);
+    $('area').textContent = roi ? `Doorway ×${(1 / roi[2]).toFixed(1)}` : 'Full';
+    $('gain').textContent = lastGain > 1 ? `×${lastGain.toFixed(1)}` : 'Off';
+    const jpeg = $('grab').toDataURL('image/jpeg', 0.8);
     try {
-      const r = await (await post('/api/frame', { camera: $('cam').value, jpeg })).json();
+      const r = await (await post('/api/frame', { camera: $('cam').value, jpeg, roi })).json();
       if (r.error) { $('status').textContent = r.error; await new Promise((ok) => setTimeout(ok, 1000)); continue; }
       tracks = r.tracks;
       r.crossings.forEach((c) => flash(c.direction, c.track));

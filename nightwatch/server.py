@@ -110,6 +110,14 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
     jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
     boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
     del jpeg
+    roi = body.get("roi")
+    if roi:
+        # The page sent a zoomed-in crop around the doorway: map boxes back to full-frame coordinates,
+        # which is where the doorway line lives.
+        x0, y0, size = (float(v) for v in roi)  # type: ignore[union-attr]
+        for b in boxes:
+            b["x1"], b["x2"] = x0 + b["x1"] * size, x0 + b["x2"] * size
+            b["y1"], b["y2"] = y0 + b["y1"] * size, y0 + b["y2"] * size
     with TRACK_LOCK:
         tracker = _tracker(cam)
         crossings = tracker.update(boxes)

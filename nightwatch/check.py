@@ -83,9 +83,11 @@ def main() -> None:
         frame = lambda: (torch.rand(1, 3, 320, 320) * 2 - 1).contiguous()  # noqa: E731
         results["pattern_cpu"] = run_model(MODELS / "normal_pattern_xnnpack.pte", normal)
         results["camera_cpu"] = run_model(MODELS / "person_ssdlite_xnnpack.pte", frame)
+        results["camera_cpu_int8"] = run_model(MODELS / "person_ssdlite_xnnpack_int8.pte", frame)
         if args.npu:
             results["pattern_npu"] = run_model(MODELS / "normal_pattern_qnn.pte", normal)
-            results["camera_npu"] = run_model(MODELS / "person_ssdlite_qnn.pte", frame)
+            results["camera_npu"] = run_model(MODELS / "person_ssdlite_qnn.pte", frame) \
+                or run_model(MODELS / "person_ssdlite_qnn_int8.pte", frame)
         if not (MODELS / "person_ssdlite_anchors.pt").exists():
             line(FAIL, "person_ssdlite_anchors.pt", "missing; git pull")
 

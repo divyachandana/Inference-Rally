@@ -62,3 +62,22 @@ def test_low_confidence_cannot_start_a_track_but_keeps_one_alive() -> None:
     tr.update([person(0.3, 0.8, score=0.9)])
     tr.update([person(0.31, 0.8, score=0.35)])
     assert len(tr.tracks) == 1 and tr.tracks[0].hits == 2
+
+
+def test_standing_on_the_line_and_wobbling_does_not_fire() -> None:
+    tr = vertical_doorway()
+    walk(tr, [(0.3, 0.85), (0.35, 0.85), (0.4, 0.85), (0.45, 0.85)])
+    # Feet jitter across the line for single frames only.
+    events = walk(tr, [(0.53, 0.85), (0.47, 0.85), (0.53, 0.85), (0.47, 0.85), (0.46, 0.85)])
+    assert events == []
+
+
+def test_fast_walker_keeps_one_id_through_a_gap() -> None:
+    tr = Tracker()
+    for i in range(5):
+        tr.update([person(0.1 + 0.07 * i, 0.8)])
+    first = tr.view()[0]["id"]
+    tr.update([])
+    tr.update([])
+    tr.update([person(0.1 + 0.07 * 7, 0.8)])   # moved 0.21 while unseen: matched by predicted position
+    assert [t["id"] for t in tr.view()] == [first]

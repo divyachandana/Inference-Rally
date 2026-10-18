@@ -112,6 +112,17 @@ python nightwatch/vision/export_detector.py --backend xnnpack     # needs torchv
 python nightwatch/server.py --model models/normal_pattern_xnnpack.pte --camera-model models/person_ssdlite_xnnpack.pte
 ```
 
+**Image quality and precision, continued:** the tracker predicts each person's motion (fast walkers and short
+occlusions keep their id) and only counts a crossing once the feet stay on the new side for 2 frames (no flicker
+when someone stands on the line). With a doorway drawn, the page sends a **zoomed crop around the door** to the
+detector, so people there appear larger, and **night boost** auto-stretches brightness/contrast of dark frames
+(capped at ×4 to avoid amplifying sensor noise) before detection.
+
+**8-bit model:** `export_detector.py --int8 --calib data/calib` quantizes the detector (PT2E). 3.9 MB instead of
+13.8 MB, same boxes on our checks (box overlap 0.95-0.99), and int8 is the format the Hexagon NPU is built for
+(`--backend qnn --int8`). On a MacBook CPU it's only slightly faster (5.3 vs 5.7 ms). Calibrate on a few dozen
+real frames from the demo camera (kept in git-ignored `data/calib`, deleted afterwards) for best accuracy.
+
 The exported `.pte` and anchors are committed, so the laptop only needs `torch` + `executorch` + `pillow`
 (no torchvision). For the NPU: `python nightwatch/vision/export_detector.py --backend qnn` on an x86_64 host with
 the QNN SDK, then `--camera-model models/person_ssdlite_qnn.pte --camera-device NPU`.
