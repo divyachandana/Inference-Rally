@@ -54,7 +54,7 @@
   .hr b { color: var(--nw-ink); min-width: 30px; font-variant-numeric: tabular-nums; }
   input[type=range] { width: 130px; accent-color: var(--nw-accent); }
   /* demo guide */
-  .steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
   .steps button { width: 100%; text-align: left; font: inherit; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
                   border-radius: 12px; border: 1px solid var(--nw-line); background: var(--nw-surface); color: var(--nw-ink-2); }
   .steps button:hover { border-color: var(--nw-line-strong); }
@@ -75,7 +75,7 @@
   .beat .acts { display: grid; gap: 8px; min-width: 210px; }
   .beat .acts .run { min-height: 56px; font-size: 17px; }
   .beat .nb { display: flex; gap: 8px; } .beat .nb .nw-btn { flex: 1; }
-  @media (max-width: 860px) { .steps { grid-template-columns: repeat(5, minmax(0, 1fr)); } .steps .lbl { display: none; } .steps button { justify-content: center; padding: 8px; }
+  @media (max-width: 860px) { .steps { grid-template-columns: repeat(6, minmax(0, 1fr)); } .steps .lbl { display: none; } .steps button { justify-content: center; padding: 8px; }
     .beat { grid-template-columns: 1fr; } .beat .say { font-size: 16px; } }
   @media (max-width: 720px) { .res { grid-template-columns: 1fr auto; } .res .hr { grid-column: 1 / -1; } input[type=range] { flex: 1; } .seg button { padding: 10px 8px; } }
 </style>
@@ -93,12 +93,12 @@
 </header>
 <main>
   <p class="note">Real sensors post to the same API. Keyboard:
-    <span><span class="nw-kbd">1</span> <span class="nw-kbd">2</span> <span class="nw-kbd">3</span> scenarios</span>
+    <span><span class="nw-kbd">1</span> <span class="nw-kbd">2</span> <span class="nw-kbd">3</span> <span class="nw-kbd">4</span> scenarios</span>
     <span><span class="nw-kbd">D</span> front door open/close</span>
     <span><span class="nw-kbd">W</span> window room 12</span></p>
 
   <section class="nw-panel" aria-labelledby="h-guide">
-    <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-guide">Demo guide · five beats</h2>
+    <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-guide">Demo guide · six beats</h2>
       <span class="note" style="font-size:12.5px"><span class="nw-kbd">←</span><span class="nw-kbd">→</span> step · <span class="nw-kbd">Enter</span> run</span></div>
     <ol class="steps" id="steps"></ol>
     <div class="beat" id="beat" aria-live="polite"></div>
@@ -112,6 +112,8 @@
         <b>R-07 heads for the front door</b><span class="exp">Expect <em style="color:var(--nw-l1)">heads-up</em> → <em style="color:var(--nw-l2)">urgent</em> → <em style="color:var(--nw-l3)">emergency</em> if nobody acknowledges. Walks outside after ~40 s.</span></button>
       <button data-scn="night_bathroom"><span class="r1"><span class="when night" data-ico="moon">03:00 · NIGHT</span><span class="nw-kbd">2</span></span>
         <b>R-15 ensuite trip</b><span class="exp">Normal for them: <em style="color:var(--nw-ok)">should stay quiet</em>. No alert.</span></button>
+      <button data-scn="camera_walkout"><span class="r1"><span class="when night" data-ico="camera">02:08 · NIGHT</span><span class="nw-kbd">4</span></span>
+        <b>Camera: R-07 walks out</b><span class="exp"><em style="color:var(--nw-l1)">Simulated camera</em> track crosses the room-12 doorway line → <em style="color:var(--nw-l1)">heads-up</em> "left their room". Tagged SIMULATED on the radar.</span></button>
       <button data-scn="day_visits"><span class="r1"><span class="when day" data-ico="sun">14:00 · DAY</span><span class="nw-kbd">3</span></span>
         <b>Visitors come and go</b><span class="exp">Doors open and close: <em style="color:var(--nw-ok)">logged as visits</em>, no alarms.</span></button>
     </div>
@@ -219,7 +221,7 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'd') toggleExit('front');
   if (k === 'w') toggleExit('win12');
-  const scn = { 1: 'night_elopement', 2: 'night_bathroom', 3: 'day_visits' }[e.key];
+  const scn = { 1: 'night_elopement', 2: 'night_bathroom', 3: 'day_visits', 4: 'camera_walkout' }[e.key];
   if (scn) runScenario(scn);
 });
 /* ------------------------------------------------------------------ demo guide (README "Demo script") */
@@ -233,6 +235,9 @@ const BEATS = [
   { title: 'Elopement, unanswered', when: '02:08 · night', scn: 'night_elopement', run: 'Run the elopement',
     say: 'R-07 gets up and heads for the front door. Nobody answers, so NightWatch keeps climbing: heads-up, urgent, emergency, then the supervisor.',
     act: 'Do not touch the phone. Let it reach level 3 and walk outside (about 60 s).' },
+  { title: 'Camera walk-out', when: '02:08 · simulated camera', scn: 'camera_walkout', run: 'Run the camera walk-out',
+    say: 'The hallway camera only sees positions, never stores video. When R-07 crosses their doorway at night, that alone is a heads-up. This run uses simulated camera data.',
+    act: 'Point at the camera radar on the nurse station: the track crosses the line, the card is tagged SIMULATED.' },
   { title: 'Answered on the phone', when: '02:08 · night', scn: 'night_elopement', run: 'Run it again',
     say: 'Same night, but now the night worker taps "I\'m going". Escalation stops, and "Found safe" closes it with a draft care record.',
     act: 'On the staff phone: tap I\'m going at the heads-up or urgent stage, then Found safe.' },

@@ -127,6 +127,10 @@
   .cam-card .ch b { font-weight: 650; color: var(--nw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cam-card .st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; letter-spacing: .06em; color: var(--nw-faint); flex: none; }
   .cam-card svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .cam-card.is-sim { border-color: var(--nw-l1); border-style: dashed; }
+  .sim-tag { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 8px; border-radius: 7px; font-size: 11px; font-weight: 800;
+             letter-spacing: .06em; color: #1a1200; background: var(--nw-l1); }
+  .sim-tag .nw-ico { width: 13px; height: 13px; }
   .radar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--nw-muted); margin-top: 10px; }
   .radar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
   .top-right .nw-btn { min-height: 36px; font-size: 13.5px; }
@@ -509,10 +513,12 @@ function radarSVG(c) {
     const nx = -uy * c.doorway.inside, ny = ux * c.doorway.inside;   // towards the room side
     const ax = x1 - ux * 300, ay = y1 - uy * 300, bx = x2 + ux * 300, by = y2 + uy * 300;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, cl = (v) => Math.max(8, Math.min(94, v));
+    // keep side labels inside the card: anchor by where they land
+    const lab = (x, y, col, word) => { const cx = cl(x), anchor = cx < 30 ? 'start' : cx > 70 ? 'end' : 'middle';
+      return `<text x="${anchor === 'start' ? Math.max(4, cx - 10) : anchor === 'end' ? Math.min(96, cx + 10) : cx}" y="${cl(y)}" fill="${col}" font-size="6" font-weight="800" text-anchor="${anchor}" letter-spacing=".08em" opacity=".85">${word}</text>`; };
     door = `<polygon points="${ax},${ay} ${bx},${by} ${bx + nx * 300},${by + ny * 300} ${ax + nx * 300},${ay + ny * 300}" fill="var(--nw-room)" fill-opacity=".1"/>
       <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--nw-accent)" stroke-width="1.6" stroke-dasharray="4 3"/>
-      <text x="${cl(mx + nx * 34)}" y="${cl(my + ny * 34)}" fill="var(--nw-room)" font-size="6" font-weight="800" text-anchor="middle" letter-spacing=".08em" opacity=".8">ROOM SIDE</text>
-      <text x="${cl(mx - nx * 34)}" y="${cl(my - ny * 34)}" fill="var(--nw-hall)" font-size="6" font-weight="800" text-anchor="middle" letter-spacing=".08em" opacity=".8">HALLWAY</text>`;
+      ${lab(mx + nx * 34, my + ny * 34, 'var(--nw-room)', 'ROOM')}${lab(mx - nx * 34, my - ny * 34, 'var(--nw-hall)', 'HALLWAY')}`;
   }
   const tracks = (c.tracks || []).map((t) => {
     const [col, word] = SIDE[t.side] || SIDE[0];
@@ -541,7 +547,8 @@ function renderRadar(s) {
     const n = (c.tracks || []).length;
     const st = !c.live ? '<span class="st"><span class="nw-dot"></span>OFF</span>'
       : `<span class="st" style="color:${n ? 'var(--nw-hall)' : 'var(--nw-ok)'}"><span class="nw-dot ${n ? 'is-hit' : 'is-live'}"></span>${n ? `${n} ${n > 1 ? 'PEOPLE' : 'PERSON'}` : 'CLEAR'}</span>`;
-    return `<div class="cam-card"><div class="ch"><b title="${esc(c.label)}">${esc(c.label.replace(/ camera$/i, ''))}</b>${st}</div>${radarSVG(c)}</div>`;
+    return `<div class="cam-card${c.simulated ? ' is-sim' : ''}"><div class="ch"><b title="${esc(c.label)}">${esc(c.label.replace(/ camera$/i, ''))}</b>${st}</div>${radarSVG(c)}
+      ${c.simulated ? `<div class="sim-tag" role="note">${icon('play')}SIMULATED · demo data, not a real camera</div>` : ''}</div>`;
   }).join('') : `<div class="nw-empty">${icon('camera')}<div><b>No cameras configured</b>Door contacts and wearables still work.</div></div>`;
 }
 
