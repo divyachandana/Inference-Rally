@@ -8,14 +8,19 @@ Level 3  Emergency  no acknowledgement in time, or resident  -> on-call supervis
 Escalation only climbs when nobody responds: one night worker for a whole wing is often busy
 with another resident, so the system keeps going for them. It never dials anyone in this build:
 contact steps are logged as "(simulated)".
+
+Restart-safe: with start_autosave(), every change is written (debounced ~1 s, atomically: tmp file +
+rename) to logs/night_state.json, and restore() brings back tonight's alerts, events, cameras and the
+clock if the server is restarted mid-night. Every change also bumps `rev`, which /api/events pushes.
 """
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -37,6 +42,10 @@ SEVERITY = {1: "routine", 2: "notable", 3: "escalation"}
 CAMERA_CONFIRM_FRAMES = 3        # consecutive frames with a person before we believe it (~0.75 s)  # the care team's derived severity scale
 UNUSUAL_ALERT = 0.9              # model score that counts as "unusual for right now"
 SUSTAIN_S = 5                    # ...for this many consecutive seconds (one odd reading is not an alert)
+STATE_VERSION = 1                # logs/night_state.json format
+SAME_NIGHT_GRACE_S = 2 * 3600    # a state file this fresh is always restored (a restart mid-demo)
+MAX_STATE_AGE_S = 16 * 3600      # ...otherwise it must be from the same noon-to-noon night and no older than this
+RESIDENT_STATE = ("in_bed", "zone", "hr", "motion", "up_since", "quiet_until", "last_exit")
 
 
 @dataclass
@@ -108,6 +117,15 @@ class Engine:
         self.latencies: deque[float] = deque(maxlen=300)
         self._scenario: threading.Thread | None = None
         self._scenario_stop = threading.Event()
+        self._scenario_lock = threading.Lock()   # never held together with self.lock (the scenario thread needs it)
+        self._changed = threading.Condition()     # own lock: taken after self.lock, never before it
+        self.rev = 0
+        self.on_log: Callable[[str, str], None] | None = None   # server hooks this into logs/nightwatch.log
+        self._state_path: Path | None = None
+        self._save_lock = threading.Lock()
+        self._saved_rev = -1
+        self._autosave_stop = threading.Event()
+        self._autosave: threading.Thread | None = None
         self.reset()
 
     # ------------------------------------------------------------------ clock and setup
@@ -132,10 +150,24 @@ class Engine:
             self._base_real = time.time()
             self._base_virtual = self._base_real
             self.speed = 1.0
+            self.bump()
+
+    def bump(self) -> None:
+        """Something changed: wake /api/events streams and the autosave."""
+        with self._changed:
+            self.rev += 1
+            self._changed.notify_all()
+
+    def wait_change(self, since: int, timeout: float) -> int:
+        """Block until rev differs from `since` (or timeout); return the current rev."""
+        with self._changed:
+            self._changed.wait_for(lambda: self.rev != since, timeout)
+            return self.rev
 
     def now(self) -> float:
         """Virtual epoch seconds (the demo can jump to 2 am)."""
-        return self._base_virtual + (time.time() - self._base_real) * self.speed
+        with self.lock:
+            return self._base_virtual + (time.time() - self._base_real) * self.speed
 
     def clock(self) -> datetime:
         return datetime.fromtimestamp(self.now())
@@ -159,7 +191,14 @@ class Engine:
         return self.clock().strftime("%H:%M:%S")
 
     def log(self, kind: str, text: str) -> None:
-        self.events.appendleft({"t": self.stamp(), "kind": kind, "text": text})
+        with self.lock:
+            self.events.appendleft({"t": self.stamp(), "kind": kind, "text": text})
+            self.bump()
+        if self.on_log:
+            try:
+                self.on_log(kind, text)
+            except Exception:  # noqa: BLE001 - logging must never break the night
+                pass
 
     # ------------------------------------------------------------------ sensor events
 
@@ -199,6 +238,7 @@ class Engine:
                         self._outside(r, str(ev.get("exit") or r.last_exit or "an exit"))
             else:
                 return {"error": f"unknown event type {kind!r}"}
+            self.bump()
             return {"ok": True}
 
     def _door(self, exit_id: str, opened: bool) -> dict[str, object]:
@@ -272,6 +312,8 @@ class Engine:
             if cam is None:
                 return {"error": f"unknown camera {cam_id!r}"}
             self.camera_latencies.append(ms)
+            if persons != cam["persons"] or time.time() - cam["last_frame"] >= 3:
+                self.bump()   # count changed, or the camera just came (back) live
             cam["persons"], cam["last_frame"] = persons, time.time()
             if doorway:
                 for c in crossings or []:
@@ -440,6 +482,7 @@ class Engine:
         with self.lock:
             hour = self.clock().hour + self.clock().minute / 60
             night = self.is_night()
+            before = [round(r.unusual, 3) for r in self.residents.values()]
             for r in self.residents.values():
                 minutes_up = 0.0 if r.up_since is None else (self.now() - r.up_since) / 60
                 x = vector(hour, not r.in_bed, r.motion, r.hr, r.hr_rest, r.zone, minutes_up)
@@ -452,6 +495,8 @@ class Engine:
                     if self._open_alert_for(r, None) is None:
                         hr = f", heart rate {r.hr:.0f} (rest {r.hr_rest:.0f})" if r.hr else ""
                         self._raise(1, f"{r.name} is up at {self.clock():%H:%M}, unusual for them{hr}", r, None)
+            if self._ticks % HISTORY_EVERY_S == 0 or before != [round(r.unusual, 3) for r in self.residents.values()]:
+                self.bump()
             self._ticks += 1
             now = time.time()
             for a in self.alerts:
@@ -632,26 +677,178 @@ class Engine:
                 "suggestions": r.suggestions()[:2] if r else [],
                 "max_level": a.max_level, "record": a.record, "backup_by": a.backup_by}
 
+    # ------------------------------------------------------------------ surviving a restart
+
+    def snapshot(self) -> dict[str, object]:
+        """Everything a restart must not lose, as plain JSON-able data (copied, so it's safe to write unlocked)."""
+        with self.lock:
+            return {
+                "version": STATE_VERSION, "saved_at": time.time(), "rev": self.rev,
+                "facility_file": self.facility_path.name, "facility": self.facility,
+                "resident_ids": sorted(self.residents),
+                "clock": {"virtual": self.now(), "speed": self.speed},
+                "next_alert": self._next_alert, "visits_today": self.visits_today,
+                "alerts": [asdict(a) for a in self.alerts],
+                "events": list(self.events),
+                "residents": {r.id: {k: getattr(r, k) for k in RESIDENT_STATE} | {"history": list(r.history)}
+                              for r in self.residents.values()},
+                "exits": {e.id: e.open for e in self.exits.values()},
+                "cameras": {c["id"]: {"enabled": c["enabled"], "schedule": c["schedule"], "doorway": c.get("doorway")}
+                            for c in self.cameras.values()},
+            }
+
+    @staticmethod
+    def restorable(data: dict[str, object], now: float | None = None) -> tuple[bool, str]:
+        """Is this saved state from tonight? (Same noon-to-noon night, or saved in the last 2 hours.)"""
+        now = time.time() if now is None else now
+        if not isinstance(data, dict) or data.get("version") != STATE_VERSION:
+            return False, "different state file version"
+        try:
+            saved = float(data["saved_at"])  # type: ignore[arg-type]
+        except (KeyError, TypeError, ValueError):
+            return False, "no save time"
+        age = now - saved
+        if age < -60:
+            return False, "saved in the future (clock changed?)"
+        if age <= SAME_NIGHT_GRACE_S:
+            return True, f"saved {int(age)} s ago"
+        night = lambda t: (datetime.fromtimestamp(t) - timedelta(hours=12)).date()  # noqa: E731
+        if age <= MAX_STATE_AGE_S and night(saved) == night(now):
+            return True, f"saved {int(age // 60)} min ago, same night"
+        return False, f"from an earlier night ({int(age // 3600)} h old)"
+
+    def restore(self, data: dict[str, object]) -> tuple[bool, str]:
+        """Bring back a saved night. Anything that doesn't match this facility file is skipped; a broken file
+        leaves a clean night (never a half-restored one)."""
+        ok, why = self.restorable(data)
+        if not ok:
+            return False, why
+        if data.get("facility_file") != self.facility_path.name or data.get("resident_ids") != sorted(self.residents):
+            return False, "facility settings changed since it was saved"
+        names = {f.name for f in fields(Alert)}
+        with self.lock:
+            try:
+                alerts = []
+                for d in data.get("alerts") or []:  # type: ignore[union-attr]
+                    a = Alert(**{k: v for k, v in d.items() if k in names})
+                    a.history = [(str(t), str(h)) for t, h in a.history]
+                    alerts.append(a)
+                ids = [a.id for a in alerts]
+                if len(set(ids)) != len(ids):
+                    raise ValueError("duplicate alert ids")
+                for rid, st in (data.get("residents") or {}).items():  # type: ignore[union-attr]
+                    r = self.residents.get(rid)
+                    if r is None:
+                        continue
+                    for k in RESIDENT_STATE:
+                        if k in st:
+                            setattr(r, k, st[k])
+                    r.history = deque((tuple(h) for h in st.get("history", [])), maxlen=r.history.maxlen)
+                for xid, is_open in (data.get("exits") or {}).items():  # type: ignore[union-attr]
+                    if xid in self.exits:
+                        self.exits[xid].open = bool(is_open)
+                for cid, c in (data.get("cameras") or {}).items():  # type: ignore[union-attr]
+                    if cid in self.cameras:
+                        cam = self.cameras[cid]
+                        cam["enabled"] = bool(c.get("enabled", True))
+                        cam["schedule"] = c.get("schedule") if c.get("schedule") in ("always", "night") else "always"
+                        cam["doorway"] = c.get("doorway") or None
+                clock = data["clock"]
+                self._base_real, self._base_virtual = float(data["saved_at"]), float(clock["virtual"])  # type: ignore[arg-type,index]
+                self.speed = float(clock["speed"])  # type: ignore[index]
+                self.alerts = alerts
+                self._next_alert = max([int(data.get("next_alert") or 1), *[i + 1 for i in ids]])  # type: ignore[arg-type]
+                self.visits_today = int(data.get("visits_today") or 0)  # type: ignore[arg-type]
+                self.events = deque((dict(e) for e in data.get("events") or []), maxlen=self.events.maxlen)  # type: ignore[union-attr]
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                self.reset()
+                return False, f"unreadable ({exc!r}); started a clean night"
+            n_open = sum(1 for a in alerts if not a.resolved)
+            self.log("system", f"Server restarted: restored tonight's state ({len(alerts)} alerts, {n_open} open)")
+        return True, why
+
+    def save_now(self) -> bool:
+        """Write the state file atomically (tmp + rename). Safe to call from any thread."""
+        if self._state_path is None:
+            return False
+        with self._save_lock:
+            snap = self.snapshot()
+            path = self._state_path
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(json.dumps(snap, separators=(",", ":")))
+                for attempt in range(5):
+                    try:
+                        os.replace(tmp, path)   # atomic; on Windows a reader holding the file can block it briefly
+                        break
+                    except PermissionError:
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.05)
+            except OSError:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                return False
+            self._saved_rev = int(snap["rev"])  # type: ignore[arg-type]
+            return True
+
+    def start_autosave(self, path: Path, debounce: float = 1.0) -> None:
+        """Save on every change, at most once per `debounce` seconds, in a background thread."""
+        self._state_path = path
+        self._autosave_stop.clear()
+
+        def loop() -> None:
+            while not self._autosave_stop.is_set():
+                rev = self.wait_change(self._saved_rev, timeout=1.0)
+                if rev == self._saved_rev:
+                    continue
+                if self._autosave_stop.wait(debounce):   # coalesce a burst of changes into one write
+                    break
+                try:
+                    self.save_now()
+                except Exception:  # noqa: BLE001 - keep saving on the next change
+                    pass
+
+        self._autosave = threading.Thread(target=loop, daemon=True, name="autosave")
+        self._autosave.start()
+
+    def stop_autosave(self, final_save: bool = True) -> None:
+        self._autosave_stop.set()
+        with self._changed:
+            self._changed.notify_all()
+        if self._autosave:
+            self._autosave.join(timeout=3)
+        if final_save:
+            self.save_now()
+
     # ------------------------------------------------------------------ scripted demo scenarios
 
     def run_scenario(self, name: str) -> dict[str, object]:
         steps = SCENARIOS.get(name)
         if steps is None:
             return {"error": f"unknown scenario {name!r}", "choices": sorted(SCENARIOS)}
-        self._scenario_stop.set()
-        if self._scenario and self._scenario.is_alive():
-            self._scenario.join(timeout=2)
-        self._scenario_stop = threading.Event()
-        stop = self._scenario_stop
+        # Its own lock, never self.lock: the old scenario thread may be waiting on self.lock while we join it.
+        with self._scenario_lock:
+            self._scenario_stop.set()
+            if self._scenario and self._scenario.is_alive():
+                self._scenario.join(timeout=2)
+            self._scenario_stop = threading.Event()
+            stop = self._scenario_stop
 
-        def run() -> None:
-            for delay, action in steps:
-                if stop.wait(delay):
-                    return
-                action(self)
+            def run() -> None:
+                for delay, action in steps:
+                    if stop.wait(delay):
+                        return
+                    try:
+                        action(self)
+                    except Exception as exc:  # noqa: BLE001 - one bad step must not kill the demo silently
+                        self.log("system", f"Scenario {name}: step failed ({exc!r})")
 
-        self._scenario = threading.Thread(target=run, daemon=True, name=f"scenario-{name}")
-        self._scenario.start()
+            self._scenario = threading.Thread(target=run, daemon=True, name=f"scenario-{name}")
+            self._scenario.start()
         return {"ok": True, "scenario": name}
 
 

@@ -4,6 +4,11 @@
     python nightwatch/server.py --model models/normal_pattern_xnnpack.pte --device CPU
     python nightwatch/server.py                                                          # rule fallback
     add --lan to let staff phones on the facility Wi-Fi open /staff/ (still never leaves the building)
+    add --fresh to start a clean night instead of restoring tonight's saved state
+
+Restart-safe: alerts (history, care records, acks), events, visits, camera on/off/schedule and doorway
+lines and the demo clock are saved to logs/night_state.json (git-ignored) about 1 s after every change
+and restored on the next start if the file is from the same night. Scenarios and settings reset it.
 
 Pages:  /dashboard/  (nurse station)   /staff/  (night staff phone)   /sim/  (sensor simulator for demos)
 
@@ -49,6 +54,7 @@ from pairing import Pairing  # noqa: E402
 from scorer import build  # noqa: E402
 from vision.tracker import Tracker  # noqa: E402
 
+STATE_FILE = HERE.parent / "logs" / "night_state.json"   # git-ignored
 ENGINE: Engine
 DETECTOR: object | None = None
 TRACKERS: dict[str, Tracker] = {}
@@ -322,6 +328,26 @@ def _camera_config(body: dict[str, object]) -> dict[str, object]:
     return {"ok": True}
 
 
+def _restore_state(path: Path, fresh: bool) -> None:
+    """Restore tonight's saved alerts/cameras/clock after a restart, and redraw saved doorway lines."""
+    if fresh or not path.exists():
+        print("State: clean night" + (" (--fresh)" if fresh else ""))
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        print(f"State: {path.name} unreadable ({exc!r}), starting a clean night")
+        return
+    ok, why = ENGINE.restore(data)
+    print(f"State: {'restored' if ok else 'not restored'} from {path.name} ({why})")
+    if not ok:
+        return
+    with TRACK_LOCK:
+        for cid, cam in ENGINE.snapshot()["cameras"].items():  # type: ignore[union-attr]
+            if cam.get("doorway"):
+                _tracker(cid).set_doorway(list(cam["doorway"]["line"]), int(cam["doorway"].get("inside", 1)))
+
+
 def main() -> None:
     global ENGINE, DETECTOR, PAIRING
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -336,6 +362,8 @@ def main() -> None:
     p.add_argument("--camera-device", default="CPU", help="label for the dashboard: NPU or CPU")
     p.add_argument("--pin", help="fixed 6-digit pairing PIN for staff phones (default: random each start)")
     p.add_argument("--unpair-all", action="store_true", help="forget every paired phone")
+    p.add_argument("--fresh", action="store_true", help="start a clean night (don't restore logs/night_state.json)")
+    p.add_argument("--state", type=Path, default=STATE_FILE, help="where tonight's state is saved")
     args = p.parse_args()
 
     facility = args.facility
@@ -346,6 +374,8 @@ def main() -> None:
     PAIRING = Pairing(HERE.parent / "logs" / "paired_devices.json", args.pin)
     if args.unpair_all:
         PAIRING.unpair_all()
+    _restore_state(args.state, args.fresh)
+    ENGINE.start_autosave(args.state)
 
     def loop() -> None:
         while True:
