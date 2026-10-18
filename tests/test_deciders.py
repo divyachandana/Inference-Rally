@@ -28,7 +28,7 @@ SPEC = RacerSpec(
     device="NPU",
     runtime="qnn",
     color="#1D9E75",
-    pipe_name="test_pipe",
+    qnn_model="gemma",
 )
 
 
@@ -76,6 +76,14 @@ def test_qnn_decider_streams_and_times_reply() -> None:
     assert seen == [1, 2, 3, 4]  # live updates while streaming
     assert result.metrics.tokens == 4  # type: ignore[attr-defined]
     assert host.calls[0][0] == "sys" and host.calls[0][1] == "u" * 300
+
+
+def test_qnn_decider_adds_suffix_and_strips_qwen_control_text() -> None:
+    host = FakeHost(["<think>\n\n</think>\n\n", '{"move": "left", "why": "west"}', "<|im_end|>"])
+    decider = QnnDecider(SPEC, host, PromptBudget(3800), " /no_think")  # type: ignore[arg-type]
+    result = asyncio.run(decider.decide(MESSAGES, OBS, lambda _: None))
+    assert result.text == '{"move": "left", "why": "west"}'
+    assert host.calls[0][1].endswith(" /no_think")
 
 
 def test_qnn_decider_reports_offline_host() -> None:

@@ -3,7 +3,7 @@
 > On-device AI models race taxis through a 3D maze. Every turn is a decision; every second is compute.
 
 ExecuTorch Hackathon — Compute Track (Copilot+ PC, Snapdragon X Elite).
-Each racer is the same (or a different) model on a different compute unit — **NPU vs GPU vs CPU**.
+Each racer is the same (or a different) model on a different compute unit — **NPU vs GPU**.
 At every junction the model is asked *left, right or straight?* and its car **waits while it thinks**,
 so faster on-device inference visibly wins.
 
@@ -28,26 +28,34 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 | Mode | Racers | Needs |
 |---|---|---|
-| **DEMO** (default) | **Gemma-4-E2B on the Snapdragon NPU** (real, ExecuTorch + QNN) vs simulated GPU and CPU racers | the QNN bundle |
-| **PLAY** | **DC (you, arrow keys)** vs **Gemma-4-E2B on the NPU** (real) vs a simulated GPU racer | the QNN bundle |
+| **DEMO** (default) | **Gemma-4-E2B** and **Qwen3-1.7B**, both on the Snapdragon NPU (real, ExecuTorch + QNN), vs a simulated GPU racer | the QNN bundle |
+| **PLAY** | **DC (you, arrow keys)** vs **Gemma-4-E2B** and **Qwen3-1.7B** on the NPU (both real) | the QNN bundle |
 
 Switch with **G** (or the MODE button). Lineups live in `racers.yaml` (`demo`, `play`, and `sim`, which
 is fully simulated and runs on any machine: `python -m inference_rally.server --profile sim`).
 
-Only the NPU racer is a real model; the GPU/CPU racers are simulated with speeds estimated relative to
-the measured NPU run (~170 ms to first token, ~13.7 tokens/s). Their HUD labels say **SIM**.
+The NPU racers are real models; the GPU racer is simulated with a speed estimated relative to the
+measured NPU runs (~170 ms to first token, ~12–14 tokens/s alone). Its HUD label says **SIM**. Both
+NPU models share the one NPU during a race, so each runs slower than it would alone (~8–9 tokens/s).
 
-## How the NPU racer works
+## How the NPU racers work
 
-The game server launches `host\qnn_llm_host.exe` from the
-[ExecuTorch QNN bundle](https://github.com/divyachandana/gamehub) (`qnn:` in `racers.yaml` holds the
-paths) and talks to it over the named pipe `\\.\pipe\rally_gemma`. The model is loaded once (~3 s,
-in the background while the title screen shows) and stays loaded across races. Each junction is a
-one-shot request (`"reset": true`), streamed token by token so TTFT and tokens/sec are timed on our
+For each model under `qnn.models` in `racers.yaml`, the game server launches `host\qnn_llm_host.exe`
+from the [ExecuTorch QNN bundle](https://github.com/divyachandana/gamehub) and talks to it over the
+named pipe `\\.\pipe\rally_<model>` (e.g. `rally_gemma`, `rally_qwen`). Each model is loaded once
+(~2–3 s, in the background while the title screen shows) and stays loaded across races. Each junction
+is a one-shot request (`"reset": true`), streamed token by token so TTFT and tokens/sec are timed on our
 side. If a host is already serving the pipe (e.g. started with the bundle's `start_host.ps1
--PipeName rally_gemma`), the game reuses it. Host output goes to `logs/qnn_host.log`.
+-PipeName rally_gemma`), the game reuses it. Host output goes to `logs/qnn_<model>.log`.
 
-If the NPU host can't start, its car shows "MODEL OFFLINE" and keeps going with fallback moves.
+Qwen3 gets `/no_think` appended to each prompt (`prompt_suffix`), otherwise it reasons for hundreds of
+tokens before answering; its empty `<think></think>` block and end-of-turn markers are stripped.
+
+The host must be built with the runner fix that reads the attention-mask shape from its last two
+dimensions: the Qwen3 `.pte` was exported with a 3-D mask and the Gemma one with a 4-D mask, and a
+runner that indexes fixed dimensions crashes on one of them right after prefill.
+
+If an NPU host can't start, its car shows "MODEL OFFLINE" and keeps going with fallback moves.
 
 ## Quick start (Windows on Snapdragon)
 
@@ -89,14 +97,14 @@ exit is (follow the green beam).
 ## Layout
 
 - `src/inference_rally/` – Python game server
-  - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, Gemma on the NPU, human
+  - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, models on the NPU, human
   - `qnn_host.py` launches `qnn_llm_host.exe` and speaks its named-pipe protocol
   - `prompts.py` junction prompt + reply parsing · `metrics.py` TTFT / tokens/sec timing
   - `models.py` typed config + event schema · `server.py` Starlette + Server-Sent Events
 - `frontend/` – Three.js split-screen game (Vite)
   - `world/` maze, scenery, procedural pixel textures · `cars/` car model, driving, option arrows
   - `render/` split-screen viewports, overview map · `hud/` HUD, leaderboard, overlays · `audio/` chiptune synth
-- `racers.yaml` – race settings, NPU host paths (`qnn:`) and racer profiles (`demo`, `play`, `sim`)
+- `racers.yaml` – race settings, NPU bundle and models (`qnn:`) and racer profiles (`demo`, `play`, `sim`)
 - `tests/` – pytest suite (game logic runs offline with simulated racers)
 - `scripts/` – `dev.ps1` (Windows) / `dev.sh` run server + UI
 - `docs/` – plan, architecture, coding standards

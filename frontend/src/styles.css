@@ -150,6 +150,15 @@ body {
   grid-template: 1fr / 1fr;
 }
 
+/* Two racers: both cars on top, the map + standings across the bottom row. */
+.panes.duo:not(.focused) .overview {
+  grid-column: 1 / -1;
+}
+
+.pane.unused {
+  display: none;
+}
+
 /* Subtle CRT scanlines in retro mode. */
 #scene.pixelated ~ .panes::after {
   content: '';

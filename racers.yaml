@@ -12,48 +12,57 @@ race:
   max_decisions: 80      # DNF after this many junctions
   countdown_s: 3
 
-# Gemma on the Snapdragon NPU: ExecuTorch + QNN, served by qnn_llm_host.exe over a named pipe.
-# The game server launches the host itself (or reuses one already serving the pipe) and keeps
-# the model loaded across races. Paths point at the gemma4_e2b_executorch_x_elite bundle.
+# Models on the Snapdragon NPU: ExecuTorch + QNN, each served by its own qnn_llm_host.exe over a
+# named pipe (\\.\pipe\rally_<model key>). The game server launches the hosts itself (or reuses
+# ones already serving those pipes) and keeps the models loaded across races. Paths point at the
+# gemma4_e2b_executorch_x_elite bundle; racers pick a model with `qnn_model: <key>`.
 qnn:
   bundle_dir: C:/Users/qc_de/Desktop/gemma4_e2b_executorch_x_elite-001/gemma4_e2b_executorch_x_elite
-  model_dir: models/gemma4_e2b_sc8380xp_ctxt_4000_ar_l-128
-  pte: gemma4_e2b_sc8380xp_ctxt_4000-001.pte
-  decoder_model_version: gemma4
   qnn_sdk: C:/Qualcomm/AIStack/QAIRT/2.46.0.260424
   hexagon_arch: v73      # Snapdragon X Elite (SC8380XP)
-  max_seq_len: 3800      # compiled context is 4000
+  models:
+    gemma:
+      model_dir: models/gemma4_e2b_sc8380xp_ctxt_4000_ar_l-128
+      pte: gemma4_e2b_sc8380xp_ctxt_4000-001.pte
+      decoder_model_version: gemma4
+      max_seq_len: 3800  # compiled context is 4000
+    qwen:
+      model_dir: models/sc8380_qwen3-1_7b_ctxt-8000
+      pte: sc8380_qwen3-1_7b_ctxt-8000.pte
+      decoder_model_version: qwen3
+      max_seq_len: 7800  # compiled context is 8000
+      prompt_suffix: " /no_think"  # Qwen3 otherwise reasons for hundreds of tokens first
 
 active_profile: demo
 
-# Simulated racers stand in for Gemma-4-E2B on the GPU and CPU. Their speeds are estimates
-# relative to the measured NPU run (~165 ms to first token, ~13.7 tokens/s, ~38-token replies).
+# The simulated GPU racer stands in for Gemma-4-E2B on the Adreno GPU. Its speed is an estimate
+# relative to the measured NPU runs (~170 ms to first token, ~12-14 tokens/s, ~17-token replies).
 profiles:
-  # DEMO mode: real Gemma on the NPU vs simulated GPU and CPU racers.
+  # DEMO mode: real Gemma and real Qwen3, both on the NPU, vs a simulated GPU racer.
   demo:
-    - id: npu
+    - id: gemma
       name: Gemma-4-E2B
-      label: NPU
+      label: GEMMA NPU
       device: NPU
       runtime: qnn
       color: "#1D9E75"
-      pipe_name: rally_gemma
+      qnn_model: gemma
+    - id: qwen
+      name: Qwen3-1.7B
+      label: QWEN3 NPU
+      device: NPU
+      runtime: qnn
+      color: "#3FA7D6"
+      qnn_model: qwen
     - id: gpu
       name: Gemma-4-E2B
       label: SIM GPU
       device: GPU
       runtime: simulated
       color: "#7F77DD"
-      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
-    - id: cpu
-      name: Gemma-4-E2B
-      label: SIM CPU
-      device: CPU
-      runtime: simulated
-      color: "#D85A30"
-      sim: {tps: 5.5, ttft_ms: 1100, accuracy: 0.6, reply_tokens: [30, 40]}
+      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [15, 25]}
 
-  # PLAY mode: you (DC) vs real Gemma on the NPU vs a simulated GPU racer.
+  # PLAY mode: you (DC) vs real Gemma and real Qwen3 on the NPU.
   play:
     - id: dc
       name: DC
@@ -61,41 +70,41 @@ profiles:
       device: HUMAN
       runtime: human
       color: "#F2C14E"
-    - id: npu
+    - id: gemma
       name: Gemma-4-E2B
-      label: NPU
+      label: GEMMA NPU
       device: NPU
       runtime: qnn
       color: "#1D9E75"
-      pipe_name: rally_gemma
-    - id: gpu
-      name: Gemma-4-E2B
-      label: SIM GPU
-      device: GPU
-      runtime: simulated
-      color: "#7F77DD"
-      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
+      qnn_model: gemma
+    - id: qwen
+      name: Qwen3-1.7B
+      label: QWEN3 NPU
+      device: NPU
+      runtime: qnn
+      color: "#3FA7D6"
+      qnn_model: qwen
 
   # Everything simulated: works on any machine, no NPU needed (UI work, tests).
   sim:
-    - id: npu
+    - id: gemma
       name: Gemma-4-E2B
-      label: SIM NPU
+      label: SIM GEMMA
       device: NPU
       runtime: simulated
       color: "#1D9E75"
-      sim: {tps: 13.7, ttft_ms: 170, accuracy: 0.6, reply_tokens: [30, 40]}
+      sim: {tps: 13.7, ttft_ms: 170, accuracy: 0.6, reply_tokens: [15, 25]}
+    - id: qwen
+      name: Qwen3-1.7B
+      label: SIM QWEN3
+      device: NPU
+      runtime: simulated
+      color: "#3FA7D6"
+      sim: {tps: 12.0, ttft_ms: 175, accuracy: 0.6, reply_tokens: [15, 25]}
     - id: gpu
       name: Gemma-4-E2B
       label: SIM GPU
       device: GPU
       runtime: simulated
       color: "#7F77DD"
-      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
-    - id: cpu
-      name: Gemma-4-E2B
-      label: SIM CPU
-      device: CPU
-      runtime: simulated
-      color: "#D85A30"
-      sim: {tps: 5.5, ttft_ms: 1100, accuracy: 0.6, reply_tokens: [30, 40]}
+      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [15, 25]}

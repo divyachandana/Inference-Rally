@@ -37,32 +37,42 @@ class QnnHostError(DeciderError):
     """The NPU host could not be started or stopped answering."""
 
 
+class QnnModelSettings(BaseModel):
+    """One QNN-compiled model in the bundle (an entry of ``qnn.models``)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_dir: str = Field(description="Model folder, relative to bundle_dir")
+    pte: str = Field(description="QNN-compiled .pte inside model_dir")
+    tokenizer: str = "tokenizer.json"
+    decoder_model_version: str = Field(description="Chat template, e.g. gemma4 or qwen3")
+    max_seq_len: int = Field(default=3800, gt=0, description="Under the compiled context length")
+    prompt_suffix: str = Field(default="", description="Appended to every prompt, e.g. /no_think")
+
+
 class QnnHostSettings(BaseModel):
-    """Where the ExecuTorch QNN bundle lives (``qnn:`` in ``racers.yaml``)."""
+    """Where the ExecuTorch QNN bundle lives and its models (``qnn:`` in ``racers.yaml``)."""
 
     model_config = ConfigDict(frozen=True)
 
     bundle_dir: Path = Field(description="Folder with host/qnn_llm_host.exe and models/")
-    model_dir: str = Field(description="Model folder, relative to bundle_dir")
-    pte: str = Field(description="QNN-compiled .pte inside model_dir")
-    tokenizer: str = "tokenizer.json"
-    decoder_model_version: str = "gemma4"
     qnn_sdk: Path = Field(description="QAIRT SDK root")
     hexagon_arch: str = Field(default="v73", description="HTP version (SC8380XP = v73)")
-    max_seq_len: int = Field(default=3800, gt=0, description="Under the compiled context length")
+    models: dict[str, QnnModelSettings]
 
-    def command(self, pipe_name: str) -> list[str]:
-        """Command line that starts the host serving ``pipe_name``."""
-        model_dir = self.bundle_dir / self.model_dir
+    def command(self, model_key: str) -> list[str]:
+        """Command line that starts a host serving ``model_key`` on its own pipe."""
+        model = self.models[model_key]
+        model_dir = self.bundle_dir / model.model_dir
         return [
             str(self.bundle_dir / "host" / "qnn_llm_host.exe"),
-            "--model_path", str(model_dir / self.pte),
-            "--tokenizer_path", str(model_dir / self.tokenizer),
-            "--decoder_model_version", self.decoder_model_version,
-            "--pipe_name", pipe_name,
-            "--seq_len", str(self.max_seq_len),
+            "--model_path", str(model_dir / model.pte),
+            "--tokenizer_path", str(model_dir / model.tokenizer),
+            "--decoder_model_version", model.decoder_model_version,
+            "--pipe_name", pipe_name(model_key),
+            "--seq_len", str(model.max_seq_len),
             # Otherwise the host writes inference_speed.txt into the working directory.
-            "--performance_output_path", str(LOG_DIR / "qnn_host_speed.txt"),
+            "--performance_output_path", str(LOG_DIR / f"qnn_{model_key}_speed.txt"),
         ]  # fmt: skip
 
     def environment(self) -> dict[str, str]:
@@ -89,15 +99,17 @@ class HostReply:
 
 
 class QnnHost:
-    """One ``qnn_llm_host`` process (or an already running one) behind one named pipe.
+    """One ``qnn_llm_host`` process (or an already running one) serving one model.
 
     The host answers one request at a time, so requests are serialized with a lock.
     """
 
-    def __init__(self, settings: QnnHostSettings, pipe_name: str) -> None:
-        """Bind to ``pipe_name``; nothing is started until :meth:`start`."""
+    def __init__(self, settings: QnnHostSettings, model_key: str) -> None:
+        """Bind to ``model_key``'s pipe; nothing is started until :meth:`start`."""
         self._settings = settings
-        self._pipe_name = pipe_name
+        self._model_key = model_key
+        self._max_seq_len = settings.models[model_key].max_seq_len
+        self._pipe_name = pipe_name(model_key)
         self._lock = threading.Lock()
         self._proc: subprocess.Popen[bytes] | None = None
         self._pipe: IO[bytes] | None = None
@@ -129,7 +141,7 @@ class QnnHost:
         request = {
             "prompt": prompt,
             "system_prompt": system_prompt,
-            "seq_len": min(seq_len, self._settings.max_seq_len),
+            "seq_len": min(seq_len, self._max_seq_len),
             "temperature": 0.0,
             "reset": True,
             "stream": True,
@@ -185,23 +197,26 @@ class QnnHost:
             if self._proc.poll() is not None:
                 code = self._proc.returncode
                 self._proc = None
-                raise QnnHostError(f"NPU host exited with code {code}; see logs/qnn_host.log")
+                raise QnnHostError(f"NPU host exited with code {code}; see {self._log_path()}")
             if time.monotonic() > deadline:
                 raise QnnHostError("NPU host did not open its pipe in time")
             time.sleep(PIPE_POLL_S)
         logger.info("NPU host ready on pipe %s", self._pipe_name)
 
     def _launch(self) -> None:
-        command = self._settings.command(self._pipe_name)
+        command = self._settings.command(self._model_key)
         if not Path(command[0]).is_file():
             raise QnnHostError(f"NPU host not found: {command[0]}")
         LOG_DIR.mkdir(exist_ok=True)
-        log = (LOG_DIR / "qnn_host.log").open("ab")
+        log = self._log_path().open("ab")
         logger.info("Launching NPU host: %s", " ".join(command))
         self._proc = subprocess.Popen(
             command, env=self._settings.environment(), stdout=log, stderr=subprocess.STDOUT
         )
         log.close()  # the child keeps its own handle
+
+    def _log_path(self) -> Path:
+        return LOG_DIR / f"qnn_{self._model_key}.log"
 
     def _try_connect(self) -> bool:
         try:
@@ -238,11 +253,16 @@ class QnnHost:
 _hosts: dict[str, QnnHost] = {}
 
 
-def get_host(settings: QnnHostSettings, pipe_name: str) -> QnnHost:
-    """Shared host for ``pipe_name``: one model load serves every race."""
-    if pipe_name not in _hosts:
-        _hosts[pipe_name] = QnnHost(settings, pipe_name)
-    return _hosts[pipe_name]
+def pipe_name(model_key: str) -> str:
+    """Name of the pipe that serves ``model_key`` (one host process per model)."""
+    return f"rally_{model_key}"
+
+
+def get_host(settings: QnnHostSettings, model_key: str) -> QnnHost:
+    """Shared host for ``model_key``: one model load serves every race."""
+    if model_key not in _hosts:
+        _hosts[model_key] = QnnHost(settings, model_key)
+    return _hosts[model_key]
 
 
 def close_all() -> None:

@@ -43,7 +43,7 @@ class RacerSpec(BaseModel):
     runtime: Runtime
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     label: str | None = Field(default=None, max_length=10, description="Short tag, e.g. '1B GPU'")
-    pipe_name: str | None = Field(default=None, description="qnn_llm_host pipe (runtime: qnn)")
+    qnn_model: str | None = Field(default=None, description="Key in qnn.models (runtime: qnn)")
     max_tokens: int = Field(default=48, ge=8, le=512, description="Reply cap for real models")
     sim: SimProfile | None = None
 

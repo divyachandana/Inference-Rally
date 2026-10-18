@@ -11,6 +11,7 @@ import asyncio
 import json
 import math
 import random
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,7 +25,9 @@ from inference_rally.qnn_host import QnnHost, QnnHostError
 
 HUMAN_TIMEOUT_S = 20.0
 WARMUP_SEQ_LEN = 64  # "Say ok." plus the chat template, with room for a short reply
-END_OF_TURN = "<turn|>"  # Gemma's end-of-turn marker, streamed as text by the host
+# Control text the host streams as plain text: Gemma/Qwen end-of-turn markers and Qwen3's
+# thinking block (empty with /no_think).
+CONTROL_TEXT = re.compile(r"<think>.*?</think>|<turn\|>|<\|im_end\|>", re.DOTALL)
 INITIAL_TOKENS_PER_CHAR = 0.5  # pessimistic until the first real prompt is measured
 PROMPT_SAFETY = 1.15
 PROMPT_MARGIN_TOKENS = 16
@@ -154,23 +157,27 @@ class PromptBudget:
 
 
 class QnnDecider:
-    """Gemma on the Snapdragon NPU via ExecuTorch's QNN backend (``qnn_llm_host``).
+    """A model on the Snapdragon NPU via ExecuTorch's QNN backend (``qnn_llm_host``).
 
     Pieces are streamed over the host's named pipe, so TTFT and tokens/sec are timed on
     our side, the same way as for every other racer.
     """
 
-    def __init__(self, spec: RacerSpec, host: QnnHost, budget: PromptBudget) -> None:
+    def __init__(
+        self, spec: RacerSpec, host: QnnHost, budget: PromptBudget, prompt_suffix: str = ""
+    ) -> None:
         """Create a decider for one racer.
 
         Args:
             spec: Racer with ``runtime: qnn``.
-            host: Shared host process for the racer's pipe.
+            host: Shared host process for the racer's model.
             budget: Prompt-size estimator (one per host, so it keeps what it learned).
+            prompt_suffix: Appended to every junction prompt (e.g. Qwen3's ``/no_think``).
         """
         self._spec = spec
         self._host = host
         self._budget = budget
+        self._prompt_suffix = prompt_suffix
 
     async def warmup(self) -> None:
         """Load the model onto the NPU (first race only) and run one tiny request."""
@@ -183,9 +190,10 @@ class QnnDecider:
     async def decide(
         self, messages: list[dict[str, str]], obs: Observation, on_token: TokenCallback
     ) -> DecisionResult:
-        """Stream Gemma's answer for one junction."""
+        """Stream the model's answer for one junction."""
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         user = "\n".join(m["content"] for m in messages if m["role"] != "system")
+        user += self._prompt_suffix
         chars = len(system) + len(user)
         result, prompt_tokens = await self._complete(
             system, user, self._budget.seq_len(chars, self._spec.max_tokens), on_token
@@ -211,7 +219,7 @@ class QnnDecider:
             raise DeciderError(f"{self._spec.id}: {exc}") from exc
         if reply.generated_tokens:
             meter.tokens = reply.generated_tokens  # exact count from the host
-        text = reply.text.replace(END_OF_TURN, "")
+        text = CONTROL_TEXT.sub("", reply.text).strip()
         return DecisionResult(text=text, metrics=meter.finish()), reply.prompt_tokens
 
 

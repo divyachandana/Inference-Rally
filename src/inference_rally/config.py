@@ -78,11 +78,15 @@ def build_decider(
         return SimulatedDecider(spec.sim, maze, random.Random(f"{seed}:{spec.id}"))
     if spec.runtime == "human":
         return HumanDecider()
-    if qnn is None or spec.pipe_name is None:
-        raise ConfigError(f"Racer {spec.id!r} runs on the NPU: set 'qnn:' and its 'pipe_name'")
-    if spec.pipe_name not in _budgets:
-        _budgets[spec.pipe_name] = PromptBudget(qnn.max_seq_len)
-    return QnnDecider(spec, get_host(qnn, spec.pipe_name), _budgets[spec.pipe_name])
+    key = spec.qnn_model
+    if qnn is None or key is None or key not in qnn.models:
+        raise ConfigError(
+            f"Racer {spec.id!r} runs on the NPU: set 'qnn_model' to a 'qnn.models' key"
+        )
+    model = qnn.models[key]
+    if key not in _budgets:
+        _budgets[key] = PromptBudget(model.max_seq_len)
+    return QnnDecider(spec, get_host(qnn, key), _budgets[key], model.prompt_suffix)
 
 
 # Prompt-size estimates learned per host, kept across races like the host itself.

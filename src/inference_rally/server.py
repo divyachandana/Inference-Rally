@@ -229,15 +229,15 @@ def create_app(config: AppConfig) -> Starlette:
 
 
 async def _prestart_npu_hosts(config: AppConfig) -> None:
-    """Load Gemma onto the NPU while the attract screen shows, so the first race starts fast."""
+    """Load the NPU models while the attract screen shows, so the first race starts fast."""
     if config.qnn is None:
         return
-    pipes = {s.pipe_name for p in config.profiles.values() for s in p if s.runtime == "qnn"}
-    for pipe in sorted(p for p in pipes if p):
+    keys = {s.qnn_model for p in config.profiles.values() for s in p if s.runtime == "qnn"}
+    for key in sorted(k for k in keys if k and k in config.qnn.models):
         try:
-            await asyncio.to_thread(qnn_host.get_host(config.qnn, pipe).start)
+            await asyncio.to_thread(qnn_host.get_host(config.qnn, key).start)
         except qnn_host.QnnHostError:
-            logger.warning("NPU host on pipe %s did not start", pipe, exc_info=True)
+            logger.warning("NPU host for %s did not start", key, exc_info=True)
 
 
 async def _json_body(request: Request) -> dict[str, object]:

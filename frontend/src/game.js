@@ -95,6 +95,11 @@ export class Game {
       racers.set(racer.id, { racer, index, car, arrows, hud, heading: racer.heading, stats: null });
     });
 
+    // Fewer racers than car panes: drop the spare panes and let the map take the free row.
+    const carPanes = this.dom.panes.slice(0, -1);
+    carPanes.forEach((pane, i) => pane.classList.toggle('unused', i >= event.racers.length));
+    carPanes[0].parentElement.classList.toggle('duo', event.racers.length <= 2);
+
     this.scene = scene;
     this.views.setup(event.racers.length, event.maze);
     this.leaderboard.reset(event.racers);
@@ -324,6 +329,7 @@ export class Game {
 
   /** Expand one racer's pane to full screen (or ``null`` for the split view). @param {number|null} index */
   focus(index) {
+    if (index !== null && this.dom.panes[index].classList.contains('unused')) return;
     this.dom.panes.forEach((pane, i) => {
       pane.hidden = index !== null && i !== index;
     });
