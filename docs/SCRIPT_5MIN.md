@@ -19,7 +19,7 @@ For the recorded video and the live demo. About 700 spoken words, roughly 5:00 a
 
 **SAY:**
 > In Wisconsin, a memory-care resident walked out through a door at 12:41 in the morning. According to authorities,
-> the door alarm went off and workers ignored it. She was found dead outside, and a jury ordered the operator to pay
+> the door alarm went off and workers ignored it. The resident was found dead outside, and a jury ordered the operator to pay
 > about four million dollars.
 >
 > It isn't rare. Wandering affects roughly a quarter of nursing-home residents with dementia, and the worst cases
