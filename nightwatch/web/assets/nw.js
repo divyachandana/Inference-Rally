@@ -120,8 +120,8 @@
   };
   const handleCameraClick = (e, by, after) => {
     const sw = e.target.closest('[data-cam-enable]'), sc = e.target.closest('[data-cam-schedule]');
-    if (sw) { sw.disabled = true; post('/api/camera/config', { camera: sw.dataset.camEnable, enabled: sw.getAttribute('aria-checked') !== 'true', by }).then(after); return true; }
-    if (sc) { post('/api/camera/config', { camera: sc.dataset.camSchedule, schedule: sc.dataset.v, by }).then(after); return true; }
+    if (sw) { sw.disabled = true; act('/api/camera/config', { camera: sw.dataset.camEnable, enabled: sw.getAttribute('aria-checked') !== 'true', by }).then(() => { sw.disabled = false; after && after(); }); return true; }
+    if (sc) { act('/api/camera/config', { camera: sc.dataset.camSchedule, schedule: sc.dataset.v, by }).then(() => after && after()); return true; }
     return false;
   };
 
@@ -193,5 +193,61 @@
   };
   const typing = (e) => { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable); };
 
-  window.NW = { nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
+  // ---------------------------------------------------------------- action feedback
+  let toastBox = null;
+  const toast = (msg, kind = 'bad', ms = 5000) => {
+    if (!toastBox) { toastBox = document.createElement('div'); toastBox.className = 'nw-toasts'; toastBox.setAttribute('role', 'status'); toastBox.setAttribute('aria-live', 'polite'); document.body.appendChild(toastBox); }
+    const t = document.createElement('div'); t.className = `nw-toast ${kind}`;
+    t.innerHTML = `${icon(kind === 'bad' ? 'wifiOff' : 'check')}<span></span>`; t.querySelector('span').textContent = msg;
+    toastBox.appendChild(t); setTimeout(() => t.remove(), ms);
+    if (kind === 'bad' && navigator.vibrate) { try { navigator.vibrate([200, 100, 200]); } catch {} }
+  };
+  // POST that never fails silently: resolves { ok, out } and shows a toast on any failure.
+  const act = async (url, body, failMsg = "Didn't reach the laptop. Try again.") => {
+    try {
+      const r = await post(url, body);
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out.error) { toast(out.error ? `${failMsg} (${out.error})` : failMsg); return { ok: false, out }; }
+      return { ok: true, out };
+    } catch { toast(failMsg); return { ok: false, out: {} }; }
+  };
+
+  // ---------------------------------------------------------------- alert order + "already beeped" memory
+  // Unacknowledged first (highest level first), then acknowledged ones; oldest first within a level.
+  const rank = (a) => (a.acked_by ? 0 : 10) + a.level;
+  const sortAlerts = (alerts) => alerts.slice().sort((x, y) => rank(y) - rank(x) || y.age_s - x.age_s);
+  // Alert ids restart at 1 after a reset or a server restart: forget ids that vanished, and ids whose
+  // age went backwards (a new alert reusing an old id). changes() -> alerts that are new or rose a level.
+  const tracker = () => {
+    const mem = {};
+    return (alerts) => {
+      const ids = new Set(alerts.map((a) => String(a.id)));
+      for (const k of Object.keys(mem)) if (!ids.has(k)) delete mem[k];
+      const out = [];
+      for (const a of alerts) {
+        const m = mem[a.id];
+        const reused = m && a.age_s + 2 < m.age;
+        if (!m || reused) out.push({ a, kind: 'new' });
+        else if (a.level > m.level) out.push({ a, kind: 'rose' });
+        else if (a.acked_by && !m.acked) out.push({ a, kind: 'acked' });
+        mem[a.id] = { level: (!m || reused) ? a.level : Math.max(m.level, a.level), age: a.age_s, acked: !!a.acked_by };
+      }
+      return out;
+    };
+  };
+
+  // ---------------------------------------------------------------- one quiet screen-reader announcer
+  let ann = null;
+  const announce = (text) => {
+    if (!ann) { ann = document.createElement('div'); ann.className = 'nw-sr-only'; ann.setAttribute('aria-live', 'assertive'); ann.setAttribute('role', 'alert'); document.body.appendChild(ann); }
+    ann.textContent = ''; setTimeout(() => { ann.textContent = text; }, 50);
+  };
+
+  // ---------------------------------------------------------------- the same nav on every laptop page
+  const NAV = [['/home/', 'Home', 'logo'], ['/dashboard/', 'Nurse station', 'bell'], ['/sim/', 'Presenter', 'play'], ['/camera/', 'Camera', 'camera'],
+    ['/report/', 'Report', 'report'], ['/perf/', 'Performance', 'chip'], ['/settings/', 'Settings', 'clock'], ['/help/', 'Help', 'help']];
+  const nav = (current, { newTab = false } = {}) => `<nav class="nw-nav" aria-label="NightWatch screens">${NAV.map(([href, label, ic]) =>
+    `<a href="${href}"${href === current ? ' aria-current="page"' : ''}${newTab && href !== current ? ' target="_blank" rel="noopener"' : ''}>${icon(ic)}${label}</a>`).join('')}</nav>`;
+
+  window.NW = { toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
 })();

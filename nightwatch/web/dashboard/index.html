@@ -11,16 +11,40 @@
   .summary { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: var(--nw-radius-pill);
              border: 1px solid var(--nw-line); background: rgba(14, 22, 40, .7); min-width: 0; }
   .summary .nw-ico { width: 22px; height: 22px; color: var(--nw-ok); }
-  .summary b { font-size: 16px; } .summary span { color: var(--nw-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .summary b { font-size: 16px; } .summary span { color: var(--nw-ink-2); font-size: 13px; white-space: normal; line-height: 1.3; }
+  .summary .cd { font-weight: 800; color: var(--nw-ink); font-variant-numeric: tabular-nums; }
   .summary.has-alert { border-color: color-mix(in srgb, var(--lvl) 55%, transparent); background: var(--lvl-bg); }
-  .top-right { display: flex; align-items: center; gap: 16px; }
+  .top-right { display: flex; align-items: center; gap: 12px; }
+  .top-right .nw-btn, .nw-mode, .nw-chipbtn { white-space: nowrap; }
+  .top-right .nw-btn, .nw-chipbtn { min-height: 40px; }
+  .screens { position: relative; }
+  .screens summary { list-style: none; cursor: pointer; } .screens summary::-webkit-details-marker { display: none; }
+  .screens summary::after { content: "▾"; font-size: 11px; color: var(--nw-faint); margin-left: 2px; }
+  .screens .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 8px; border-radius: 14px;
+                   background: var(--nw-surface); border: 1px solid var(--nw-line-strong); box-shadow: var(--nw-shadow); }
+  .screens .menu .nw-nav { flex-direction: column; } .screens .menu .nw-nav a { width: 100%; }
+  /* lost contact (H1) */
+  .lost { margin: 0; padding: 14px 24px; background: #3a0d16; border-bottom: 3px solid var(--nw-l3); color: #ffd6da; font-weight: 750; font-size: 18px;
+          display: flex; align-items: center; gap: 12px; }
+  .lost[hidden] { display: none; }
+  .lost .nw-ico { width: 26px; height: 26px; color: var(--nw-l3); }
+  body.nw-stale main, body.nw-stale .takeover, body.nw-stale .sysbar, body.nw-stale .top-mid { opacity: .35; filter: grayscale(1); pointer-events: none; }
+  body.nw-stale .nw-clock { color: var(--nw-l3); text-decoration: line-through; }
+  body.nw-stale .nw-offline { display: none !important; }
+  /* sound unlock (H8) */
+  .unlock { display: block; width: 100%; border: 0; cursor: pointer; padding: 10px 24px; background: var(--nw-l1); color: #1a1200; font: 800 15px/1.2 var(--nw-font); text-align: center; }
+  .unlock[hidden] { display: none; }
   .sysbar { padding: 10px 24px; border-bottom: 1px solid var(--nw-line); background: rgba(7, 11, 20, .5); }
   .sysbar .lbl { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--nw-faint); margin-right: 4px; align-self: center; }
 
   main { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(360px, 1fr); gap: 18px; padding: 18px 24px 28px; }
   .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
   @media (max-width: 1000px) {
+    body.nw { display: flex; flex-direction: column; }
+    body.nw > .sysbar { order: 9; border-top: 1px solid var(--nw-line); }
     main { grid-template-columns: 1fr; padding: 14px 16px 24px; gap: 14px; }
+    .alert.in-takeover { display: none; }
+    .shown-above { display: flex !important; }
     .col-side { order: -1; }
     .nw-topbar, .sysbar { padding-left: 16px; padding-right: 16px; }
     .nw-clock { font-size: 34px; }
@@ -137,8 +161,20 @@
   .radar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
   .nw-chip.pair { border-color: rgba(138, 180, 255, .45); color: var(--nw-ink-2); }
   .nw-chip.pair .pin { font-family: var(--nw-mono); font-size: 14px; letter-spacing: .14em; color: var(--nw-accent); }
-  .top-right .nw-btn { min-height: 36px; font-size: 13.5px; }
+  .top-right .nw-btn { font-size: 13.5px; }
 
+  .shown-above { display: none; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 12px; border: 1px dashed var(--nw-l3); border-radius: 12px; color: #ffc2c8; font-size: 13.5px; font-weight: 650; }
+  .alert.nw-l3 .nw-timeline time { color: var(--nw-muted); }
+  .alert.compact { padding: 10px 14px; }
+  .alert.compact .a-title { font-size: 16px; margin: 8px 0 6px; }
+  .alert.compact .nw-ring { width: 48px; height: 48px; } .alert.compact .nw-ring .val b { font-size: 15px; }
+  .alert details { margin-top: 6px; } .alert details summary { cursor: pointer; color: var(--nw-muted); font-size: 13px; padding: 4px 0; }
+  .alert .sim-tag { margin: 0 0 10px; }
+  .takeover.is-acked { animation: none; background: #2b0b13; padding: 12px 20px; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .takeover.is-acked .to-sign .disc { width: 44px; height: 44px; box-shadow: none; } .takeover.is-acked .to-sign .disc .nw-ico { width: 24px; height: 24px; }
+  .takeover.is-acked .to-sign b, .takeover.is-acked .to-sign .nw-ladder, .takeover.is-acked .to-facts, .takeover.is-acked .nw-tip { display: none; }
+  .takeover.is-acked .to-title { font-size: 18px; margin: 0; }
+  .takeover.is-acked .to-act { grid-auto-flow: column; } .takeover.is-acked .to-act .nw-btn { min-height: 44px; font-size: 15px; }
   /* backup + records */
   .a-backup { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 650;
               color: #ffd0a8; background: var(--nw-l2-bg); border: 1px solid rgba(255, 143, 63, .45); }
@@ -179,7 +215,7 @@
   .log .rel { display: block; font-size: 10.5px; color: var(--nw-faint); }
 
   /* sound toggle + help */
-  #sound[aria-pressed="true"] { border-color: var(--nw-ok); color: var(--nw-ok); }
+  #sound[aria-pressed="true"] { background: transparent; border-color: var(--nw-ok); color: var(--nw-ok); }
   .keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; align-items: center; margin: 14px 0 4px; font-size: 15px; }
   .hint-keys { font-size: 12px; color: var(--nw-faint); }
 
@@ -197,17 +233,16 @@
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand">
+  <a class="nw-brand" href="/home/" title="NightWatch home">
     <div class="nw-brand-mark" id="logo"></div>
-    <div style="min-width:0"><div class="nw-brand-name">NightWatch</div><div class="nw-brand-sub" id="facility">Nurse station</div></div>
-  </div>
-  <div class="top-mid"><div class="summary" id="summary" role="status" aria-live="polite"></div></div>
+    <div style="min-width:0"><h1 class="nw-brand-name">NightWatch</h1><div class="nw-brand-sub" id="facility">Nurse station</div></div>
+  </a>
+  <div class="top-mid"><div class="summary" id="summary"></div></div>
   <div class="top-right">
     <span id="offline-host"></span>
     <button class="nw-btn nw-btn--ghost" id="sound" aria-pressed="false" title="Alert sound (M)">Sound off</button>
     <button class="nw-btn nw-btn--ghost" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><span class="nw-kbd">?</span></button>
-    <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener" id="perf-link">Performance</a>
-    <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener" id="report-link">Shift report</a>
+    <details class="screens"><summary class="nw-btn nw-btn--ghost" id="screens-btn">Screens</summary><div class="menu" id="screens"></div></details>
     <span class="nw-mode" id="mode">–</span>
     <div class="nw-clock" id="clock" aria-label="Facility clock">--:--</div>
   </div>
@@ -223,21 +258,23 @@
   <span class="nw-chip" id="c-ack"></span>
   <span class="nw-chip pair" id="c-pair" hidden></span>
 </div>
-<section class="takeover" id="takeover" hidden role="alert" aria-live="assertive"></section>
+<div class="lost" id="lost" hidden role="alert"></div>
+<button class="unlock" id="unlock" hidden>Click anywhere to enable alarm sound</button>
+<section class="takeover" id="takeover" hidden aria-label="Emergency"></section>
 <main>
   <div class="col">
     <section class="nw-panel" aria-labelledby="h-map">
       <div class="nw-panel-head">
         <h2 class="nw-panel-title" id="h-map">Floor plan · live</h2>
         <div class="legend" aria-hidden="true">
-          <span><i style="background:var(--nw-moon);opacity:.55"></i>In bed</span>
+          <span><i style="background:transparent;border:2px solid #7d8fc4;box-sizing:border-box"></i>In bed</span>
           <span><i style="background:var(--nw-accent)"></i>Up</span>
           <span><i style="background:var(--nw-l2)"></i>In an alert</span>
           <span><i style="background:var(--nw-l3)"></i>Exit open at night</span>
         </div>
       </div>
-      <svg id="map" viewBox="0 0 564 290" role="img" aria-label="Floor plan with residents and exits"></svg>
-      <p class="nw-sr-only" id="map-desc" aria-live="polite"></p>
+      <svg id="map" viewBox="0 0 564 290" role="group" aria-label="Floor plan: residents (select one for details) and exits" aria-describedby="map-desc"></svg>
+      <p class="nw-sr-only" id="map-desc"></p>
     </section>
     <section class="nw-panel" aria-labelledby="h-res">
       <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-res">Residents · checked every second</h2></div>
@@ -255,7 +292,7 @@
   <div class="col col-side">
     <section class="nw-panel" aria-labelledby="h-alerts">
       <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-alerts">Active alerts <span class="nw-count" id="n-alerts">0</span></h2></div>
-      <div id="alerts" aria-live="polite"></div>
+      <div id="alerts"></div>
     </section>
     <section class="nw-panel" aria-labelledby="h-radar">
       <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-radar">Camera radar · positions only</h2><span class="nw-chip" id="radar-ms"></span></div>
@@ -270,24 +307,29 @@
 </main>
 <div class="nw-scrim" id="scrim" hidden></div>
 <aside class="nw-drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dr-title"><div id="dr-body"></div></aside>
+<div class="nw-modal" id="confirm" hidden role="alertdialog" aria-modal="true" aria-labelledby="cf-title" aria-describedby="cf-text"><div class="box">
+  <h2 id="cf-title" style="margin:0 0 8px;font:800 22px/1.2 var(--nw-font-display)">Close this alert?</h2>
+  <p id="cf-text" style="margin:0 0 16px;color:var(--nw-ink-2)"></p>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end"><button class="nw-btn" data-close>Cancel</button><button class="nw-btn nw-btn--safe" id="cf-yes">Yes, found safe</button></div>
+</div></div>
 <div class="nw-modal" id="help" hidden role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
   <div class="dr-head"><h2 id="help-title">Keyboard shortcuts</h2><button class="nw-x" data-close aria-label="Close">✕</button></div>
   <div class="keys">
-    <span class="nw-kbd">A</span><span>Acknowledge the top alert</span>
-    <span class="nw-kbd">F</span><span>Found safe: close the top alert</span>
+    <span><span class="nw-kbd">Shift</span> + <span class="nw-kbd">A</span></span><span>Acknowledge the top unacknowledged alert</span>
+    <span><span class="nw-kbd">Shift</span> + <span class="nw-kbd">F</span></span><span>Found safe: close the top alert (asks to confirm)</span>
     <span class="nw-kbd">R</span><span>Open the top alert's resident</span>
-    <span class="nw-kbd">M</span><span>Sound on / off</span>
+    <span class="nw-kbd">M</span><span>Alarm sound on / off</span>
     <span class="nw-kbd">/</span><span>Search the event log</span>
     <span class="nw-kbd">?</span><span>This help</span>
     <span class="nw-kbd">Esc</span><span>Close a drawer or this help</span>
   </div></div></div>
 <script src="/assets/nw.js"></script>
 <script>
-const { nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
+const { toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
-$('report-link').insertAdjacentHTML('afterbegin', icon('report'));
-$('perf-link').insertAdjacentHTML('afterbegin', icon('chip'));
+$('screens').innerHTML = nav('/dashboard/', { newTab: true });
+document.addEventListener('click', (e) => { const d = document.querySelector('details.screens'); if (d.open && !d.contains(e.target)) d.open = false; });
 offlineBadge($('offline-host'));
 
 const heat = (u) => (u >= 0.9 ? 'var(--nw-l3)' : u >= 0.6 ? 'var(--nw-l2)' : u >= 0.35 ? 'var(--nw-l1)' : 'var(--nw-ok)');
@@ -375,7 +417,8 @@ function updateMap(s) {
     const a = alertOf[r.id];
     g.setAttribute('class', `res${a ? ' alerting l' + a.level : ''}`);
     const color = a ? `var(--nw-l${a.level})` : r.in_bed ? '#7d8fc4' : 'var(--nw-accent)';
-    g.querySelector('.core').setAttribute('fill', color);
+    g.querySelector('.core').setAttribute('fill', a || !r.in_bed ? color : '#0a1120');   // in bed = hollow ring
+    g.querySelector('.core').setAttribute('stroke', a || !r.in_bed ? '#070b14' : color);
     g.querySelector('.core').setAttribute('r', a ? 12 : r.in_bed ? 8 : 10);
     g.querySelector('.halo').setAttribute('stroke', a ? `var(--nw-l${a.level})` : 'none');
     const tag = g.querySelector('.tag');
@@ -416,7 +459,8 @@ function timerHTML(a, s) {
   return `<div class="a-timer"><span class="cap">${cap}</span>${ring(a.escalates_in_s, a.escalates_in_s / limitFor(a, s), cap)}</div>`;
 }
 function alertKey(a) { return [a.level, a.acked_by, a.backup_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
-function alertHTML(a, s) {
+function alertHTML(a, s, compact) {
+  if (compact) return compactHTML(a, s);
   const L = LEVELS[a.level];
   const [tip, ...more] = a.suggestions;
   return `<article class="alert nw-l${a.level}${a.level === 3 && !a.acked_by ? ' nw-attn' : ''}" data-id="${a.id}" data-key="${esc(alertKey(a))}" aria-label="Level ${a.level} ${L.name}: ${esc(a.title)}">
@@ -426,6 +470,7 @@ function alertHTML(a, s) {
       ${timerHTML(a, s)}
     </div>
     <h3 class="a-title">${esc(a.title)}</h3>
+    ${simTag(a)}
     ${a.resident ? `<button class="nw-btn nw-btn--ghost" data-open-res="${esc(a.resident)}" style="min-height:32px;font-size:13px;margin:-2px 0 10px">${icon('user')}Open ${esc(a.resident)}</button>` : ''}
     ${a.resident ? `<div class="a-who"><span>${icon('user')}${esc(a.resident)}${a.room ? ` · Room ${esc(a.room)}` : ''}</span>${a.description ? `<span>${icon('eye')}${esc(a.description)}</span>` : ''}</div>` : ''}
     ${a.backup_by ? `<div class="a-backup" role="status">${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b> · all staff phones alerted</div>` : ''}
@@ -434,6 +479,23 @@ function alertHTML(a, s) {
     ${timeline(a.history)}
     <div class="a-btns">${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
       <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button></div>
+  </article>`;
+}
+const simTag = (a) => (/simulated camera/i.test(a.title + ' ' + a.history.map((h) => h[1]).join(' ')) ? `<div class="sim-tag" role="note">${icon('play')}SIMULATED camera · demo data</div>` : '');
+function compactHTML(a, s) {
+  const [tip] = a.suggestions;
+  return `<article class="alert compact nw-l${a.level}" data-id="${a.id}" data-key="${esc('c|' + alertKey(a))}" aria-label="Level ${a.level} ${LEVELS[a.level].name}: ${esc(a.title)}">
+    <div class="a-head"><div class="a-tags"><div class="row">${badge(a.level)}</div><div class="a-meta nw-num">Alert #${a.id} · <span class="age">${fmtAge(a.age_s)}</span></div></div>${timerHTML(a, s)}</div>
+    <h3 class="a-title">${esc(a.title)}</h3>${simTag(a)}
+    ${a.backup_by ? `<div class="a-backup">${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b></div>` : ''}
+    <div class="a-btns">${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
+      <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button></div>
+    <details><summary>Details, what has worked and history</summary>
+      ${a.resident ? `<div class="a-who" style="margin-top:8px"><span>${icon('user')}${esc(a.resident)}${a.room ? ` · Room ${esc(a.room)}` : ''}</span>${a.description ? `<span>${icon('eye')}${esc(a.description)}</span>` : ''}</div>` : ''}
+      ${tip ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(tip)}</div></div></div>` : ''}
+      <div class="a-sec">Escalation history</div>${timeline(a.history)}
+      ${a.resident ? `<button class="nw-btn nw-btn--ghost" data-open-res="${esc(a.resident)}" style="min-height:36px;font-size:13px;margin-top:8px">${icon('user')}Open ${esc(a.resident)}</button>` : ''}
+    </details>
   </article>`;
 }
 const fmtAge = (s) => (s < 60 ? `${s} s ago` : `${Math.floor(s / 60)} min ${s % 60} s ago`);
@@ -448,10 +510,12 @@ function renderAlerts(s) {
   box.querySelector('.nw-empty')?.remove();
   const keep = new Set(s.alerts.map((a) => String(a.id)));
   box.querySelectorAll('.alert').forEach((el) => { if (!keep.has(el.dataset.id)) el.remove(); });
+  box.querySelector('.shown-above')?.remove();
   s.alerts.forEach((a, i) => {
     let el = box.querySelector(`.alert[data-id="${a.id}"]`);
-    if (!el || el.dataset.key !== alertKey(a)) {
-      const tmp = document.createElement('div'); tmp.innerHTML = alertHTML(a, s);
+    const compact = i >= 2, key = (compact ? 'c|' : '') + alertKey(a);
+    if (!el || el.dataset.key !== key) {
+      const tmp = document.createElement('div'); tmp.innerHTML = alertHTML(a, s, compact);
       const fresh = tmp.firstElementChild;
       el ? el.replaceWith(fresh) : box.appendChild(fresh);
       el = fresh;
@@ -460,8 +524,16 @@ function renderAlerts(s) {
       const r = el.querySelector('.nw-ring');
       if (r && a.escalates_in_s != null) updateRing(r, a.escalates_in_s, a.escalates_in_s / limitFor(a, s), el.querySelector('.a-timer .cap')?.textContent || '');
     }
+    el.classList.toggle('in-takeover', a.id === takeoverId);
     if (box.children[i] !== el) box.insertBefore(el, box.children[i]);
   });
+  // narrow screens hide the card already shown in the emergency banner (M12)
+  let note = box.querySelector('.shown-above');
+  if (takeoverId != null && s.alerts.some((a) => a.id === takeoverId)) {
+    if (!note) { note = document.createElement('div'); note.className = 'shown-above'; box.appendChild(note); }
+    note.innerHTML = `${icon('siren')}Alert #${takeoverId} is shown in the emergency banner above.`;
+    box.insertBefore(note, box.firstChild);
+  } else if (note) note.remove();
 }
 
 /* ------------------------------------------------------------------ care records */
@@ -565,12 +637,13 @@ function renderHeader(s) {
   $('clock').innerHTML = `${esc(hh)}:${esc(mm)}<small>:${esc(ss)}</small>`;
   const m = $('mode');
   m.className = 'nw-mode ' + (s.night ? 'is-night' : 'is-day');
-  m.innerHTML = s.night ? `${icon('moon')}NIGHT MODE` : `${icon('sun')}DAY MODE`;
+  m.innerHTML = s.night ? `${icon('moon')}NIGHT` : `${icon('sun')}DAY`;
   const sum = $('summary');
   if (s.alerts.length) {
-    const a = s.alerts[0];
+    const a = s.alerts[0];   // sorted: top unacknowledged first
+    const cd = !a.acked_by && a.escalates_in_s != null && !(a.level === 3 && contactsDone(a)) ? `<span class="cd">next step in ${a.escalates_in_s} s</span> · ` : '';
     sum.className = `summary has-alert nw-l${a.level}`;
-    sum.innerHTML = `${badge(a.level)}<span>${s.alerts.length} active · ${esc(a.resident || a.title)}${a.acked_by ? ' · staff responding' : a.escalates_in_s != null && !(a.level === 3 && contactsDone(a)) ? ` · next step in ${a.escalates_in_s} s` : ''}</span>`;
+    sum.innerHTML = `${badge(a.level)}<span>${cd}${esc(a.resident || a.title)} · ${a.acked_by ? `${esc(a.acked_by)} responding` : '<b style="font-size:13px">nobody responding yet</b>'}${s.alerts.length > 1 ? ` · ${s.alerts.length} active` : ''}</span>`;
   } else {
     const inBed = s.residents.filter((r) => r.in_bed).length;
     sum.className = 'summary';
@@ -601,12 +674,14 @@ function whereNow(a, s) {
   if (r && !r.in_bed) return ZONE[r.zone] + (r.zone === 'exit' && ex ? ` · ${ex.label}` : '');
   return ex ? ex.label : r ? `Room ${r.room}` : '–';
 }
-let toKey = null;
+let toKey = null, takeoverId = null;
 function renderTakeover(s) {
-  const l3 = s.alerts.filter((a) => a.level === 3);
+  const l3 = s.alerts.filter((a) => a.level === 3);   // already sorted: unacknowledged first
   const box = $('takeover');
-  if (!l3.length) { box.hidden = true; toKey = null; return; }
+  if (!l3.length) { box.hidden = true; toKey = null; takeoverId = null; return; }
   const a = l3[0];
+  takeoverId = a.id;
+  box.classList.toggle('is-acked', !!a.acked_by);
   const key = [a.id, a.acked_by, a.backup_by, a.title, a.suggestions[0], l3.length].join('|');
   box.hidden = false;
   if (key !== toKey) {
@@ -706,25 +781,48 @@ function renderRadar(s) {
 document.addEventListener('click', async (e) => {
   if (handleCameraClick(e, 'nurse station', tick)) return;
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.ack) { b.disabled = true; await post('/api/ack', { alert: +b.dataset.ack, by: 'Nurse station' }); tick(); }
-  if (b.dataset.res) { b.disabled = true; await post('/api/resolve', { alert: +b.dataset.res, outcome: 'Found safe, returned to room' }); tick(); }
+  if (b.dataset.ack) { b.disabled = true; const r = await act('/api/ack', { alert: +b.dataset.ack, by: 'Nurse station' }, "Acknowledge didn't reach NightWatch. Try again."); if (!r.ok) b.disabled = false; tick(); }
+  if (b.dataset.res) { b.disabled = true; const r = await act('/api/resolve', { alert: +b.dataset.res, outcome: 'Found safe, returned to room' }, "Found safe didn't reach NightWatch. Try again."); if (!r.ok) b.disabled = false; tick(); }
 });
 
+let lastGood = null;
+function setStale(on) {
+  document.body.classList.toggle('nw-stale', on);
+  $('lost').hidden = !on;
+  ['main', '.takeover', '.sysbar'].forEach((q) => { const el = document.querySelector(q); if (el) el.inert = on; });   // no clicks or tabbing into stale actions
+  if (on) $('lost').innerHTML = `${icon('wifiOff')}<span>Lost contact with NightWatch${lastGood ? ` at ${esc(lastGood)}` : ''} · alerts are NOT being checked on this screen. Retrying…</span>`;
+}
 async function tick() {
   let s;
-  try { s = await (await fetch('/api/state')).json(); } catch { $('summary').innerHTML = '<b>Server not reachable</b>'; return; }
-  last = s; sounds(s);
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    s = await r.json();
+    if (!s || !Array.isArray(s.alerts)) throw new Error('bad state');
+  } catch { setStale(true); return; }
+  if (document.body.classList.contains('nw-stale')) setStale(false);
+  lastGood = s.clock;
+  s.alerts = sortAlerts(s.alerts);
+  const changes = track(s.alerts);
+  for (const { a, kind } of changes) {
+    if (kind === 'new' || kind === 'rose') {
+      announce(`Level ${a.level} ${LEVELS[a.level].name}: ${a.title}`);
+      if (a.level >= 2 && soundPref && !a.acked_by) tone(a.level);
+    } else if (kind === 'acked') announce(`Alert ${a.id}: ${a.acked_by} is responding`);
+  }
+  last = s;
   renderHeader(s); renderTakeover(s); updateMap(s); renderAlerts(s); renderRadar(s); renderRecords(s); renderResidents(s); renderLog(s);
 }
 /* ------------------------------------------------------------------ sound */
 let last = null;
 const SOUND_KEY = 'nw-dash-sound';
-let soundPref = false; try { soundPref = localStorage.getItem(SOUND_KEY) === 'on'; } catch {}
-const heard = {};
+let soundPref = true; try { soundPref = localStorage.getItem(SOUND_KEY) !== 'off'; } catch {}   // on unless muted
+const track = tracker();
 function syncSound() {
   const ctx = soundPref ? audio() : null, running = ctx && ctx.state === 'running';
   $('sound').setAttribute('aria-pressed', String(soundPref));
-  $('sound').innerHTML = `${icon(soundPref ? 'volume' : 'mute')}${soundPref ? (running ? 'Sound on' : 'Sound on · click to enable') : 'Sound off'}`;
+  $('sound').innerHTML = `${icon(soundPref ? 'volume' : 'mute')}${soundPref ? (running ? 'Sound on' : 'Sound locked') : 'Muted'}`;
+  $('unlock').hidden = !(soundPref && !running);
 }
 function toggleSound() {
   soundPref = !soundPref; try { localStorage.setItem(SOUND_KEY, soundPref ? 'on' : 'off'); } catch {}
@@ -733,13 +831,11 @@ function toggleSound() {
 }
 $('sound').onclick = toggleSound;
 // Browsers only start audio after a gesture: the first click or key anywhere unlocks it.
-['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (soundPref) { audio(); setTimeout(syncSound, 50); } }, { once: true }));
-function sounds(s) {
-  for (const a of s.alerts) {
-    if ((heard[a.id] || 0) < a.level && !a.acked_by && a.level >= 2 && soundPref && last) tone(a.level);
-    heard[a.id] = Math.max(heard[a.id] || 0, a.level);
-  }
-}
+// Browsers only start audio after a gesture: any click or key anywhere unlocks it (until it runs).
+const unlockAudio = () => { if (soundPref) { audio(); setTimeout(syncSound, 80); } };
+['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, unlockAudio));
+setInterval(syncSound, 3000);
+
 syncSound();
 
 /* ------------------------------------------------------------------ resident drawer */
@@ -807,14 +903,25 @@ function openDrawer(id) {
   clearInterval(drawerTimer); drawerTimer = setInterval(loadDrawer, 2000);
 }
 function closeOverlays() {
-  const wasOpen = !$('drawer').hidden || !$('help').hidden;
+  const wasOpen = !$('drawer').hidden || !$('help').hidden || !$('confirm').hidden;
   clearInterval(drawerTimer); drawerId = null;
-  $('drawer').hidden = true; $('help').hidden = true; $('scrim').hidden = true;
+  $('drawer').hidden = true; $('help').hidden = true; $('confirm').hidden = true; $('scrim').hidden = true;
   if (wasOpen && drawerReturn && document.contains(drawerReturn)) drawerReturn.focus();
 }
+let confirmId = null;
+function askResolve(a) {
+  drawerReturn = document.activeElement; confirmId = a.id;
+  $('cf-title').textContent = `Close alert #${a.id} as found safe?`;
+  $('cf-text').textContent = `${a.resident ? `${a.resident}: ` : ''}${a.title}. Escalation stops and a draft care record is created.`;
+  $('confirm').hidden = false; $('cf-yes').focus();
+}
+$('cf-yes').onclick = async () => {
+  const id = confirmId; closeOverlays();
+  await act('/api/resolve', { alert: id, outcome: 'Found safe, returned to room' }, "Found safe didn't reach NightWatch. Try again."); tick();
+};
 function openHelp() { drawerReturn = document.activeElement; $('help').hidden = false; $('help').querySelector('[data-close]').focus(); }
 document.addEventListener('click', (e) => {
-  if (e.target.closest('[data-close]') || e.target === $('scrim') || e.target === $('help')) { closeOverlays(); return; }
+  if (e.target.closest('[data-close]') || e.target === $('scrim') || e.target === $('help') || e.target === $('confirm')) { closeOverlays(); return; }
   const o = e.target.closest('[data-open-res]'); if (o) { openDrawer(o.dataset.openRes); return; }
   const dot = e.target.closest('#map .res'); if (dot) openDrawer(dot.id.replace(/^res-/, ''));
 });
@@ -823,18 +930,19 @@ $('logq').addEventListener('input', () => last && renderLog(last));
 
 /* ------------------------------------------------------------------ keyboard */
 document.addEventListener('keydown', async (e) => {
-  const overlay = !$('drawer').hidden ? $('drawer') : !$('help').hidden ? $('help') : null;
+  const overlay = !$('confirm').hidden ? $('confirm') : !$('drawer').hidden ? $('drawer') : !$('help').hidden ? $('help') : null;
   if (e.key === 'Escape') { if (overlay) { e.preventDefault(); closeOverlays(); } else if (document.activeElement === $('logq')) $('logq').blur(); return; }
   if (overlay) { trapFocus(overlay, e); return; }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('#map .res')) { e.preventDefault(); openDrawer(e.target.closest('.res').id.replace(/^res-/, '')); return; }
   if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
   const top = last && last.alerts[0];
   const k = e.key.toLowerCase();
+  if (document.body.classList.contains('nw-stale') && (k === 'a' || k === 'f')) { toast('Not connected to NightWatch: nothing was sent.'); return; }
+  if (e.shiftKey && k === 'a') { const t = last && last.alerts.find((x) => !x.acked_by); if (t) { e.preventDefault(); await act('/api/ack', { alert: t.id, by: 'Nurse station' }, "Acknowledge didn't reach NightWatch."); tick(); } return; }
+  if (e.shiftKey && k === 'f') { if (top) { e.preventDefault(); askResolve(top); } return; }
   if (e.key === '?') { e.preventDefault(); openHelp(); }
   else if (e.key === '/') { e.preventDefault(); $('logq').focus(); $('logq').scrollIntoView({ block: 'center' }); }
   else if (k === 'm') toggleSound();
-  else if (k === 'a' && top && !top.acked_by) { await post('/api/ack', { alert: top.id, by: 'Nurse station' }); tick(); }
-  else if (k === 'f' && top) { await post('/api/resolve', { alert: top.id, outcome: 'Found safe, returned to room' }); tick(); }
   else if (k === 'r' && top && top.resident) openDrawer(top.resident);
 });
 

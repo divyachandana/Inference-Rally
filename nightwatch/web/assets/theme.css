@@ -81,6 +81,9 @@ body.nw {
 }
 .nw-brand-mark svg { width: 22px; height: 22px; }
 .nw-brand > div { min-width: 0; }
+h1.nw-brand-name { margin: 0; }
+a.nw-brand { color: inherit; text-decoration: none; border-radius: 12px; }
+a.nw-brand:hover .nw-brand-name { text-decoration: underline; text-underline-offset: 3px; }
 .nw-brand-name { font: 700 19px/1.1 var(--nw-font-display); letter-spacing: -.01em; }
 .nw-brand-sub { color: var(--nw-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -138,7 +141,8 @@ body.nw {
   color: var(--lvl, var(--nw-ink)); background: var(--lvl-bg, var(--nw-raised));
   border: 1px solid color-mix(in srgb, var(--lvl, var(--nw-line)) 45%, transparent);
 }
-.nw-l3 .nw-badge, .nw-badge.nw-l3 { background: var(--nw-l3); color: #fff; border-color: var(--nw-l3); }
+/* dark ink on the emergency red: 6.2:1 (white was 3.16:1) */
+.nw-l3 .nw-badge, .nw-badge.nw-l3 { background: var(--nw-l3); color: #120a02; border-color: var(--nw-l3); }
 /* three-step ladder: filled up to the current level */
 .nw-ladder { display: inline-flex; gap: 3px; align-items: flex-end; }
 .nw-ladder i { width: 6px; border-radius: 2px; background: var(--nw-line-strong); }
@@ -290,6 +294,24 @@ body.nw {
 .nw-x { -webkit-appearance: none; appearance: none; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--nw-line-strong); background: var(--nw-surface-2);
   color: var(--nw-ink); cursor: pointer; display: grid; place-items: center; flex: none; }
 .nw-x:hover { background: var(--nw-raised); }
+
+/* ---------------------------------------------------------------- toasts (action feedback) */
+.nw-toasts { position: fixed; z-index: 120; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: grid; gap: 8px; width: min(520px, calc(100vw - 32px)); pointer-events: none; }
+.nw-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; font-weight: 650; font-size: 15px;
+  background: var(--nw-raised); border: 1px solid var(--nw-line-strong); color: var(--nw-ink); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+.nw-toast.bad { background: #3a0d16; border-color: var(--nw-l3); color: #ffd6da; }
+.nw-toast.bad .nw-ico { color: var(--nw-l3); }
+.nw-toast.good .nw-ico { color: var(--nw-ok); }
+.nw-toast .nw-ico { width: 20px; height: 20px; }
+
+/* ---------------------------------------------------------------- shared laptop nav */
+.nw-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.nw-nav a { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 10px; font: 650 13.5px/1 var(--nw-font);
+  color: var(--nw-ink-2); text-decoration: none; border: 1px solid transparent; white-space: nowrap; }
+.nw-nav a:hover { background: var(--nw-surface-2); border-color: var(--nw-line-strong); color: var(--nw-ink); }
+.nw-nav a[aria-current="page"] { background: var(--nw-raised); border-color: var(--nw-line-strong); color: var(--nw-ink); }
+.nw-nav a .nw-ico { width: 16px; height: 16px; color: var(--nw-faint); }
 
 /* ---------------------------------------------------------------- offline proof */
 .nw-offline {
