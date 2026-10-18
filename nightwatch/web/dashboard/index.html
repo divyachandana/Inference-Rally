@@ -464,7 +464,7 @@ function timerHTML(a, s) {
   return `<div class="a-timer"><span class="cap">${cap}</span>${ring(a.escalates_in_s, a.escalates_in_s / limitFor(a, s), cap)}</div>`;
 }
 let LIVE = false;
-const helpBtn = (a) => `<button class="nw-btn nw-btn--help" data-notify="${a.id}">${icon('phone')}<span class="lbl">${LIVE ? 'Call for help (REAL calls)' : 'Call for help'}</span></button>`;
+const helpBtn = (a) => `<button class="nw-btn nw-btn--help" data-notify="${a.id}">${icon('phone')}<span class="lbl">${LIVE ? 'Call for help (REAL)' : 'Call for help'}</span></button>`;
 const contactsHTML = (a) => ((a.notifications || []).length ? `<div class="a-sec">Who's been contacted</div>${contactsList(a.notifications)}` : '');
 function alertKey(a) { return [LIVE, notesKey(a.notifications), a.level, a.acked_by, a.backup_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
 function alertHTML(a, s, compact) {
@@ -671,10 +671,11 @@ function renderHeader(s) {
   if (pair) $('c-pair').innerHTML = `${icon('phone')}Pair a phone · PIN <b class="pin">${String(pair.pin).replace(/\D/g, '')}</b> · <b>${Number(pair.devices) || 0}</b> paired`;
   LIVE = !!s.contacts_live;
   $('c-calls').hidden = s.contacts_live == null;
-  $('c-calls').innerHTML = s.contacts_live ? `<span class="nw-live-calls">${icon('phone')}REAL calls/SMS ON</span>`
-    : `${icon('phone')}Contact calls <b>simulated</b>${s.twilio_configured ? '' : ' · no phone line set up'}`;
+  const chs = s.channels ? Object.entries(s.channels).filter(([, v]) => v).map(([k]) => ({ call: 'call', sms: 'SMS', push: 'push', imessage: 'iMessage' }[k] || k)) : [];
+  $('c-calls').innerHTML = s.contacts_live ? `<span class="nw-live-calls">${icon('phone')}REAL sending ON</span>${chs.length ? ` · ${esc(chs.join(', '))}` : ''}`
+    : `${icon('phone')}Contacts <b>dry run</b>${chs.length ? ` · ready: ${esc(chs.join(', '))}` : s.twilio_configured ? '' : ' · no sender set up'}`;
   // Honest: watching never needs the internet; real calls/SMS do.
-  $('c-net').innerHTML = s.contacts_live ? `${icon('wifiOff')}Internet needed <b>only for calls/SMS</b>` : `${icon('wifiOff')}Internet needed <b>No</b>`;
+  $('c-net').innerHTML = s.contacts_live ? `${icon('wifiOff')}Internet needed <b>only to notify contacts</b>` : `${icon('wifiOff')}Internet needed <b>No</b>`;
   $('c-staff').innerHTML = `${icon('user')}Night staff on duty <b>${esc(s.night_staff)}</b>`;
   $('c-temp').innerHTML = `${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b>`;
   $('c-visits').innerHTML = `${icon('door')}Visits today <b>${esc(s.stats.visits_today)}</b>`;

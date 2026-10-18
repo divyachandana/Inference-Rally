@@ -170,7 +170,7 @@ const STR = {
         helpArmReal: 'Toque otra vez: llamar/escribir DE VERDAD', helpDone: 'Contactos avisados (simulado: sin llamadas reales).', helpDoneReal: 'Llamando y escribiendo a los contactos ahora.',
         failHelp: 'La llamada de ayuda no llegó al portátil. Toque otra vez.', contacted: 'A quién se ha avisado',
         ctr: { roles: { on_call: 'Supervisor de guardia', family: 'Familia', owner: 'Dirección del centro', emergency_services: 'Servicios de emergencia', other: 'Contacto' },
-               status: { queued: 'En cola', calling: 'Llamando…', sent: 'Enviado', failed: 'Falló', simulated: 'Simulado' }, es: 'se llamaría según el protocolo del centro (simulado)' } },
+               status: { queued: 'En cola', calling: 'Llamando…', sent: 'Enviado', failed: 'Falló', simulated: 'Simulado' }, channels: { call: 'llamada', sms: 'mensaje de texto', 'call+sms': 'llamada + texto', push: 'notificación (ntfy)', imessage: 'iMessage' }, es: 'se llamaría según el protocolo del centro (simulado)' } },
 };
 let lang = store.get('nw-lang') === 'es' ? 'es' : 'en';
 const T = (k, ...a) => { const v = STR[lang][k] ?? STR.en[k]; return typeof v === 'function' ? v(...a) : v; };

@@ -36,6 +36,7 @@
     volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
     mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><circle cx="12" cy="17.3" r=".8" fill="currentColor"/>',
+    chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/>',
     heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
   };
   const icon = (name, cls = '') =>
@@ -254,7 +255,8 @@
   const ROLE = { on_call: ['phone', 'On-call supervisor'], family: ['heart', 'Family'], owner: ['shield', 'Facility owner'],
     emergency_services: ['siren', 'Emergency services'], other: ['user', 'Contact'] };
   const CSTAT = { queued: ['Queued', 'clock'], calling: ['Calling…', 'phone'], sent: ['Sent', 'check'], failed: ['Failed', 'wifiOff'], simulated: ['Simulated', 'play'] };
-  const CHANNEL = { call: 'call', sms: 'text', 'call+sms': 'call + text', simulated: 'simulated' };
+  const CHANNEL = { call: 'call', sms: 'text', 'call+sms': 'call + text', push: 'push (ntfy)', imessage: 'iMessage', simulated: 'simulated' };
+  const CHICON = { call: 'phone', sms: 'note', 'call+sms': 'phone', push: 'bell', imessage: 'chat' };
   // tr (optional): { roles: {role: name}, status: {status: label}, es: 'emergency-services line' } for other languages.
   const contactRow = (n, tr = {}) => {
     const [ic, roleEn] = ROLE[n.role] || ROLE.other;
@@ -265,9 +267,10 @@
     const [labelEn, sic] = CSTAT[st];
     const label = (tr.status && tr.status[st]) || labelEn;
     const detail = es ? (tr.es || 'would be called per facility policy (simulated)')
-      : [n.channel !== 'simulated' && (CHANNEL[n.channel] || n.channel), !/^simulated( contact)?$/i.test(n.detail || '') && n.detail, n.at].filter(Boolean).join(' · ');
+      : [n.channel !== 'simulated' && ((tr.channels && tr.channels[n.channel]) || CHANNEL[n.channel] || n.channel), !/^simulated( contact)?$/i.test(n.detail || '') && n.detail, n.at].filter(Boolean).join(' · ');
     const nm = n.name && n.name !== roleName && n.name !== roleEn ? n.name : '';
-    return `<li>${icon(ic)}<span class="who"><b>${esc(nm || roleName)}</b>${nm ? ` · ${esc(roleName)}` : ''}<small>${esc(detail)}</small></span>
+    const chi = !es && CHICON[n.channel] ? `${icon(CHICON[n.channel], 'ch')} ` : '';
+    return `<li>${icon(ic)}<span class="who"><b>${esc(nm || roleName)}</b>${nm ? ` · ${esc(roleName)}` : ''}<small>${chi}${esc(detail)}</small></span>
       <span class="nw-cstat is-${st}">${icon(sic)}${esc(label)}</span></li>`;
   };
   const contactsList = (notes, tr) => (notes && notes.length ? `<ul class="nw-contacts">${notes.map((n) => contactRow(n, tr)).join('')}</ul>` : '');

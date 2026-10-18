@@ -302,6 +302,7 @@ a.nw-brand:hover .nw-brand-name { text-decoration: underline; text-underline-off
 .nw-contacts .who { min-width: 0; } .nw-contacts .who b { color: var(--nw-ink); font-weight: 650; }
 .nw-contacts .who small { display: block; color: var(--nw-muted); font-size: 12px; overflow-wrap: anywhere; }
 .nw-contacts .nw-ico { width: 18px; height: 18px; color: var(--nw-muted); }
+.nw-contacts small .nw-ico.ch { width: 13px; height: 13px; vertical-align: -2px; color: var(--nw-faint); }
 .nw-cstat { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em;
   white-space: nowrap; border: 1px solid var(--nw-line-strong); color: var(--nw-ink-2); }
 .nw-cstat.is-sent { color: var(--nw-ok); border-color: rgba(61, 220, 151, .45); background: rgba(61, 220, 151, .1); }

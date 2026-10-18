@@ -78,6 +78,7 @@
   .resetbox .q { font-size: 13px; color: #ffc2c8; font-weight: 650; }
   .nw-btn--danger { background: var(--nw-l3); border-color: var(--nw-l3); color: #120a02; }
   /* contacts */
+  #contacts-panel .nw-panel-head { flex-wrap: wrap; }
   .liverow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
   #live-sw[aria-checked="true"] { color: #ffb3bb; border-color: var(--nw-l3); } #live-sw[aria-checked="true"] .trk { background: var(--nw-l3); }
   .liveconfirm { border: 2px solid var(--nw-l3); background: var(--nw-l3-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 8px; }
@@ -88,6 +89,16 @@
   .crow.bad { border-color: var(--nw-l3); }
   .crow .nw-input, .crow .nw-select { min-height: 40px; }
   .crow .err { grid-column: 1 / -1; } .crow .err:empty { display: none; }
+  .crow .acts { display: flex; flex-direction: column; gap: 6px; } .crow .acts .nw-btn { min-height: 40px; white-space: nowrap; }
+  .crow .topic { grid-column: 1 / -1; } .crow .trow { display: flex; gap: 8px; } .crow .trow .nw-input { flex: 1; font-family: var(--nw-mono); }
+  .crow .hint { margin: 6px 0 0; font-size: 12.5px; color: var(--nw-muted); }
+  .crow .warn { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: #ffe3a3; }
+  .crow .warn .nw-ico { color: var(--nw-l1); width: 16px; height: 16px; }
+  .test-out { grid-column: 1 / -1; font-size: 13px; font-weight: 650; padding: 6px 10px; border-radius: 8px; }
+  .test-out:empty { display: none; }
+  .test-out.is-ok { color: var(--nw-ok); background: rgba(61, 220, 151, .1); } .test-out.is-sim { color: var(--nw-l1); background: var(--nw-l1-bg); }
+  .test-out.is-bad { color: #ffb3bb; background: var(--nw-l3-bg); }
+  @media (max-width: 480px) { .crow .trow { flex-direction: column; } }
   .crow .lbl-sm { font-size: 11px; font-weight: 700; color: var(--nw-faint); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: 3px; }
   @media (max-width: 1000px) { .crow { grid-template-columns: 1fr 1fr; } .crow .del { justify-self: end; } }
   @media (max-width: 480px) { .crow { grid-template-columns: 1fr; } }
@@ -161,13 +172,13 @@
   </section>
 
   <section class="nw-panel" aria-labelledby="h-contacts" id="contacts-panel">
-    <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-contacts">Contacts · who gets called</h2><span id="twilio" class="nw-chip"></span></div>
+    <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-contacts">Contacts · who gets called</h2><span id="twilio" class="nw-chip" style="white-space:normal;max-width:100%;display:inline-block"></span></div>
     <div class="liverow">
-      <button class="nw-switch" role="switch" aria-checked="false" id="live-sw" aria-describedby="live-warn"><span class="trk" aria-hidden="true"></span><span class="txt">Real calls/SMS: OFF</span></button>
-      <p id="live-warn" style="margin:0;font-size:13px;color:var(--nw-muted);flex:1 1 320px">OFF = dry run: every contact is marked "simulated" and nothing leaves this laptop. Turning it ON will <b>really call/text</b> the numbers below (never emergency services). Resets to OFF on every server start.</p>
+      <button class="nw-switch" role="switch" aria-checked="false" id="live-sw" aria-describedby="live-warn"><span class="trk" aria-hidden="true"></span><span class="txt">Real sending: OFF</span></button>
+      <p id="live-warn" style="margin:0;font-size:13px;color:var(--nw-muted);flex:1 1 320px">OFF = dry run: every contact is marked "simulated" and nothing leaves this laptop. Turning it ON will <b>really call, text, push or iMessage</b> the contacts below (never emergency services). Resets to OFF on every server start.</p>
     </div>
     <div id="live-confirm" class="liveconfirm" hidden role="alertdialog" aria-labelledby="lc-t" aria-describedby="lc-d">
-      <b id="lc-t">Really call and text these numbers?</b><div id="lc-d"></div>
+      <b id="lc-t">Really send to these contacts?</b><div id="lc-d"></div>
       <div class="btnrow"><button class="nw-btn nw-btn--danger" id="live-yes">Yes, turn real calls/SMS ON</button><button class="nw-btn" id="live-no">Cancel</button></div>
     </div>
     <form id="cform" novalidate>
@@ -437,27 +448,56 @@ renderGuide();
 
 /* ------------------------------------------------------------------ contacts (laptop only) */
 const ROLES = [['on_call', 'On-call supervisor'], ['family', 'Family'], ['owner', 'Facility owner'], ['emergency_services', 'Emergency services'], ['other', 'Other']];
-const CHANNELS = [['simulated', 'Simulated only'], ['call', 'Phone call'], ['sms', 'Text (SMS)'], ['call+sms', 'Call + text']];
+const CHANNELS = [['simulated', 'Simulated only'], ['call', 'Phone call'], ['sms', 'Text (SMS)'], ['call+sms', 'Call + text'], ['push', 'Push (ntfy, free)'], ['imessage', 'iMessage (free)'], ['push+imessage', 'Push + iMessage (free)']];
+// Which senders this laptop has right now (contacts "available", or state.channels); the reason explains a greyed-out one.
+const WHY = { call: 'needs Twilio', sms: 'needs Twilio', push: 'needs internet (ntfy)', imessage: 'needs macOS + Messages' };
+const parts = (ch) => (ch === 'simulated' ? [] : String(ch).split('+'));
+const avail = () => (C && C.available) || (state && state.channels) || null;
+const missing = (ch) => { const av = avail(); return av ? parts(ch).filter((p) => !av[p]) : []; };
+const chanOK = (ch) => missing(ch).length === 0;
+const whyNot = (ch) => [...new Set(missing(ch).map((p) => WHY[p] || `needs ${p}`))].join(', ');
+const chanName = (ch) => (CHANNELS.find(([k]) => k === ch) || [, ch])[1];
 const EMERGENCY = new Set(['911', '112', '999', '000', '110', '119', '118', '08', '100', '101', '102', '933']);
+const TOPIC = /^[A-Za-z0-9_-]{12,64}$/, E164 = /^\+[1-9]\d{7,14}$/, EMAIL = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
 let C = null, cDirty = false, cLocal = true;
+const testOut = {};   // contact id -> last "Send test" result, survives re-renders
 const sel = (name, list, v, dis) => `<select class="nw-select" name="${name}"${dis ? ' disabled' : ''}>${list.map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+const chanSel = (v, dis) => `<select class="nw-select" name="channel"${dis ? ' disabled' : ''}>${CHANNELS.map(([k, l]) => {
+  const ok = chanOK(k);
+  return `<option value="${k}"${k === v ? ' selected' : ''}${!ok && k !== v ? ' disabled' : ''}>${esc(l)}${ok ? '' : ` · ${whyNot(k)}`}</option>`;
+}).join('')}</select>`;
 function rowHTML(c, i) {
-  const es = c.role === 'emergency_services';
+  const es = c.role === 'emergency_services', ch = es ? 'simulated' : (c.channel || 'simulated');
+  const im = parts(ch).includes('imessage'), push = parts(ch).includes('push'), saved = c.id && !cDirty;
+  const t = testOut[c.id];
   return `<div class="crow" data-i="${i}" data-id="${esc(c.id || '')}">
     <label><span class="lbl-sm">Role</span>${sel('role', ROLES, c.role, !cLocal)}</label>
     <label><span class="lbl-sm">Name</span><input class="nw-input" name="name" maxlength="60" value="${esc(c.name || '')}"${cLocal ? '' : ' disabled'}></label>
-    <label><span class="lbl-sm">Phone</span><input class="nw-input" name="phone" inputmode="tel" autocomplete="off" placeholder="${es ? 'never dialled' : '+15551234821'}" value="${esc(c.phone || '')}"${cLocal && !es ? '' : ' disabled'}></label>
-    <label><span class="lbl-sm">How</span>${sel('channel', CHANNELS, es ? 'simulated' : c.channel, !cLocal || es)}</label>
+    <label><span class="lbl-sm">Phone</span><input class="nw-input" name="phone" inputmode="tel" autocomplete="off"
+      placeholder="${es ? 'never dialled' : parts(ch).some((p) => p === 'call' || p === 'sms') ? '+15551234821' : 'optional'}" value="${esc(c.phone || '')}"${cLocal && !es ? '' : ' disabled'}></label>
+    <label><span class="lbl-sm">How</span>${chanSel(ch, !cLocal || es)}</label>
     <label><span class="lbl-sm">Residents</span><input class="nw-input" name="residents" placeholder="all" value="${esc((c.residents || []).join(', '))}"${cLocal ? '' : ' disabled'}></label>
-    ${cLocal ? `<button type="button" class="nw-btn nw-btn--ghost del" data-del="${i}" aria-label="Remove ${esc(c.name || 'contact')}">Remove</button>` : '<span></span>'}
+    <span class="acts">${cLocal && !es ? `<button type="button" class="nw-btn" data-test="${esc(c.id || '')}"${saved ? '' : ' disabled title="Save first"'}>${icon('play')}Send test</button>` : ''}
+      ${cLocal ? `<button type="button" class="nw-btn nw-btn--ghost del" data-del="${i}" aria-label="Remove ${esc(c.name || 'contact')}">Remove</button>` : ''}</span>
+    ${push ? `<div class="topic"><label><span class="lbl-sm">ntfy topic (the "address" of this push channel)</span>
+        <span class="trow"><input class="nw-input" name="topic" maxlength="64" spellcheck="false" autocomplete="off" placeholder="nightwatch-…" value="${esc(c.topic || '')}"${cLocal ? '' : ' disabled'}>
+        ${cLocal ? `<button type="button" class="nw-btn" data-gen="${i}">Generate topic</button>` : ''}</span></label>
+        <p class="hint">Install the free <b>ntfy</b> app → <b>Subscribe to topic</b> → enter this topic. Anyone who knows it can read the alerts, so keep it long and random.</p></div>` : ''}
+    ${im && !es ? `<div class="topic"><label><span class="lbl-sm">iMessage to (phone or Apple ID email)</span>
+        <input class="nw-input" name="imessage" inputmode="email" autocomplete="off" spellcheck="false" placeholder="empty = the phone number above, or name@icloud.com" value="${esc(c.imessage || '')}"${cLocal ? '' : ' disabled'}></label>
+        <p class="hint">Sent by this Mac's Messages app (free). The recipient needs iMessage on.</p></div>` : ''}
+    ${!es && !chanOK(ch) ? `<div class="warn">${icon('wifiOff')}This laptop can't send by ${esc(chanName(ch))} right now (${esc(whyNot(ch))}): it will show as simulated.</div>` : ''}
+    <div class="test-out${t ? ` is-${t.kind}` : ''}" role="status">${t ? esc(t.text) : ''}</div>
     <div class="nw-err err" role="alert"></div></div>`;
 }
 function renderContacts() {
   if (!C) return;
-  $('twilio').innerHTML = C.twilio_configured ? `<span class="nw-dot is-live"></span>Phone line configured (Twilio)` : `<span class="nw-dot"></span>No phone line set up: everything is simulated`;
+  const av = avail();
+  $('twilio').innerHTML = `${C.twilio_configured ? '<span class="nw-dot is-live"></span>Calls/SMS: Twilio set up' : '<span class="nw-dot"></span>Calls/SMS: no Twilio'}${av
+    ? ` · Push: ${av.push ? 'ready' : 'off'} · iMessage: ${av.imessage ? 'ready' : 'needs macOS'}` : ''}`;
   const sw = $('live-sw');
   sw.setAttribute('aria-checked', String(!!C.live));
-  sw.querySelector('.txt').textContent = `Real calls/SMS: ${C.live ? 'ON' : 'OFF'}`;
+  sw.querySelector('.txt').textContent = `Real sending: ${C.live ? 'ON' : 'OFF'}`;
   if (!cDirty) $('crows').innerHTML = C.contacts.map(rowHTML).join('') || '<p class="note">No contacts yet.</p>';
   ['c-add', 'c-save'].forEach((id) => { $(id).hidden = !cLocal; });
 }
@@ -474,20 +514,33 @@ async function loadContacts() {
 function readRows() {
   return [...document.querySelectorAll('.crow')].map((row) => {
     const f = (n) => row.querySelector(`[name="${n}"]`);
-    const role = f('role').value;
-    return { id: row.dataset.id || undefined, role, name: f('name').value.trim(), phone: role === 'emergency_services' ? '' : f('phone').value.replace(/[\s().-]/g, ''),
-             channel: role === 'emergency_services' ? 'simulated' : f('channel').value,
+    const role = f('role').value, channel = role === 'emergency_services' ? 'simulated' : f('channel').value;
+    const raw = role === 'emergency_services' ? '' : f('phone').value.trim();
+    const old = (C && C.contacts.find((c) => c.id === row.dataset.id)) || {};
+    const im = f('imessage') ? f('imessage').value.trim() : (old.imessage || '');
+    return { id: row.dataset.id || undefined, role, name: f('name').value.trim(), channel,
+             phone: raw.replace(/[\s().-]/g, ''),
+             topic: f('topic') ? f('topic').value.trim() : (old.topic || ''),
+             imessage: im.includes('@') ? im : im.replace(/[\s().-]/g, ''),
              residents: f('residents').value.split(',').map((x) => x.trim()).filter(Boolean) };
   });
 }
 function validate(list) {   // same rules as the server, so mistakes show before saving
   let ok = true;
   document.querySelectorAll('.crow').forEach((row, i) => {
-    const c = list[i], errs = [], digits = c.phone.replace(/\D/g, '');
+    const c = list[i], errs = [], P = parts(c.channel), es = c.role === 'emergency_services';
+    const badNum = (v) => { const d = v.replace(/\D/g, ''); return EMERGENCY.has(d) || d.length < 8 ? 'short' : !E164.test(v) ? 'format' : ''; };
     if (!c.name) errs.push('Name is required.');
-    if (c.phone && (EMERGENCY.has(digits) || digits.length < 8)) errs.push('That looks like an emergency or short number: NightWatch never dials those.');
-    else if (c.phone && !/^\+[1-9]\d{7,14}$/.test(c.phone)) errs.push('Use international format, e.g. +15551234821.');
-    if (c.channel !== 'simulated' && c.role !== 'emergency_services' && !c.phone) errs.push(`A phone number is needed to ${c.channel === 'sms' ? 'text' : 'call'}.`);
+    if (c.phone) { const b = badNum(c.phone); if (b === 'short') errs.push('That looks like an emergency or short number: NightWatch never contacts those.'); else if (b === 'format') errs.push('Phone: use international format, e.g. +15551234821.'); }
+    if (c.imessage) {
+      if (c.imessage.includes('@')) { if (!EMAIL.test(c.imessage)) errs.push('iMessage: that is not a valid Apple ID email.'); }
+      else { const b = badNum(c.imessage); if (b) errs.push(b === 'short' ? 'iMessage: emergency or short numbers are refused.' : 'iMessage: phone in international format or an Apple ID email.'); }
+    }
+    if (!es) {
+      if ((P.includes('call') || P.includes('sms')) && !c.phone) errs.push(`A phone number is needed to ${P.includes('call') ? 'call' : 'text'}.`);
+      if (P.includes('imessage') && !c.imessage && !c.phone) errs.push('iMessage needs a phone number or an Apple ID email.');
+      if (P.includes('push') && !TOPIC.test(c.topic || '')) errs.push('Push needs a topic: 12-64 letters, digits, - or _ (use Generate topic).');
+    }
     if (c.residents.some((r) => !/^[A-Za-z0-9_.-]{1,24}$/.test(r))) errs.push('Residents: ids like R-07, separated by commas.');
     row.classList.toggle('bad', errs.length > 0);
     row.querySelector('.err').textContent = errs.join(' ');
@@ -495,12 +548,40 @@ function validate(list) {   // same rules as the server, so mistakes show before
   });
   return ok;
 }
+const genTopic = () => 'nightwatch-' + [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
 $('cform').addEventListener('input', () => { cDirty = true; });
 $('cform').addEventListener('change', (e) => {
-  if (e.target.name === 'role') { const list = readRows(); C.contacts = list; cDirty = false; renderContacts(); cDirty = true; }
+  if (e.target.name === 'role' || e.target.name === 'channel') { const list = readRows(); C.contacts = list; cDirty = false; renderContacts(); cDirty = true;
+    document.querySelector(`.crow[data-i="${e.target.closest('.crow').dataset.i}"] [name="${e.target.name}"]`)?.focus(); }
 });
 $('c-add').onclick = () => { const list = cDirty ? readRows() : C.contacts.slice(); list.push({ role: 'family', name: '', phone: '', channel: 'simulated', residents: [] }); C.contacts = list; cDirty = false; renderContacts(); cDirty = true; document.querySelector('.crow:last-child [name="name"]').focus(); };
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
+  const g = e.target.closest('[data-gen]');
+  if (g) { const inp = g.closest('.crow').querySelector('[name="topic"]'); inp.value = genTopic(); cDirty = true; inp.focus(); inp.select(); return; }   // nightwatch- + 12 random hex
+  const t = e.target.closest('[data-test]');
+  if (t) {   // laptop only; with real sending OFF the server only says what it would send
+    const id = t.dataset.test, out = t.closest('.crow').querySelector('.test-out');
+    t.disabled = true; out.className = 'test-out'; out.textContent = 'Sending test…';
+    try {
+      const r = await post('/api/contacts/test', { contact_id: id });
+      const j = await r.json().catch(() => ({}));
+      if (j.error || !r.ok) testOut[id] = { kind: 'bad', text: `Not sent: ${j.error || `server said ${r.status}`}` };
+      else {
+        const res = j.results || [];
+        const line = (x) => {
+          const how = chanName(x.channel), to = x.to ? ` to ${x.to}` : '';
+          if (x.status === 'dry_run') return `Would send by ${how}${to}: “${x.text}” (real sending is OFF)`;
+          if (x.status === 'sent' || x.status === 'calling' || x.status === 'queued') return `Sent by ${how}${to}`;
+          if (x.status === 'failed') return `Failed by ${how}${to}: ${x.detail || 'error'}`;
+          return `Simulated ${how}: ${x.detail || ''}`;
+        };
+        const kind = res.some((x) => x.status === 'failed') ? 'bad' : res.length && res.every((x) => ['sent', 'calling', 'queued'].includes(x.status)) ? 'ok' : 'sim';
+        testOut[id] = { kind, text: res.map(line).join(' · ') || 'Done' };
+      }
+    } catch { testOut[id] = { kind: 'bad', text: "Didn't reach NightWatch." }; }
+    out.className = `test-out is-${testOut[id].kind}`; out.textContent = testOut[id].text; t.disabled = false;
+    return;
+  }
   const d = e.target.closest('[data-del]'); if (!d) return;
   const list = readRows(); list.splice(+d.dataset.del, 1); C.contacts = list; cDirty = false; renderContacts(); cDirty = true;
 });
@@ -515,18 +596,20 @@ $('cform').onsubmit = async (e) => {
 };
 // Real calls: OFF is instant, ON asks first and lists exactly who would be called.
 $('live-sw').onclick = async () => {
-  if (C && C.live) { const r = await act('/api/contacts', { live: false }, 'Could not turn real calls off'); if (r.ok) toast('Real calls/SMS OFF: dry run.', 'good'); loadContacts(); return; }
-  const real = (C ? C.contacts : []).filter((c) => c.role !== 'emergency_services' && c.channel !== 'simulated' && c.phone);
-  $('lc-d').innerHTML = real.length ? `<ul>${real.map((c) => `<li>${esc(c.name)} · ${esc(c.phone)} · ${esc(c.channel === 'sms' ? 'text' : c.channel === 'call' ? 'call' : 'call + text')}</li>`).join('')}</ul>
+  if (C && C.live) { const r = await act('/api/contacts', { live: false }, 'Could not turn real calls off'); if (r.ok) toast('Real sending OFF: dry run.', 'good'); loadContacts(); return; }
+  const to = (c, p) => (p === 'push' ? c.topic && `ntfy topic ${c.topic}` : p === 'imessage' ? c.imessage || c.phone : c.phone);
+  const real = (C ? C.contacts : []).filter((c) => c.role !== 'emergency_services').flatMap((c) =>
+    parts(c.channel).filter((p) => chanOK(p) && to(c, p)).map((p) => ({ c, p })));
+  $('lc-d').innerHTML = real.length ? `<ul>${real.map(({ c, p }) => `<li>${esc(c.name)} · ${esc(chanName(p))} · ${esc(to(c, p))}</li>`).join('')}</ul>
       <span style="font-size:13px">At most 5 per alert and 20 per hour. Emergency services stay simulated.${C.twilio_configured ? '' : ' No phone line is set up, so they will still show as simulated.'}</span>`
-    : '<span style="font-size:13px">No contact has a phone number and a call/text channel yet, so nothing would actually be sent.</span>';
+    : '<span style="font-size:13px">No contact has a working channel and an address yet, so nothing would actually be sent.</span>';
   $('live-confirm').hidden = false; $('live-no').focus();
 };
 $('live-no').onclick = () => { $('live-confirm').hidden = true; $('live-sw').focus(); };
 $('live-yes').onclick = async () => {
   $('live-confirm').hidden = true;
   const r = await act('/api/contacts', { live: true }, 'Could not turn real calls on');
-  if (r.ok) toast('Real calls/SMS ON. Turn it off after the demo.', 'bad', 7000);
+  if (r.ok) toast('Real sending ON. Turn it off after the demo.', 'bad', 7000);
   loadContacts();
 };
 loadContacts(); setInterval(() => { if (!document.hidden) loadContacts(); }, 5000);
