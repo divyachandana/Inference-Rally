@@ -10,8 +10,8 @@ NightWatch
 
 ## Tagline (one line)
 
-On-device night supervision for memory care: it sees when a resident with dementia leaves their room at
-night, and keeps escalating until a human responds.
+Notices when a resident with dementia leaves their room at night and keeps escalating until a human
+responds, entirely on one laptop, with the internet off.
 
 ## Track
 
@@ -19,69 +19,47 @@ Compute (Copilot+ PC, Snapdragon X Elite)
 
 ## Description
 
-People with dementia sometimes try to leave their care home ("elopement"), and the worst outcomes happen at
-night, when one staff member may be covering a whole wing. Door alarms exist, but an alarm nobody answers
-doesn't help, and by the time the door alarm goes off it is already late.
-
 Mildred Hernandez was 100 and had Alzheimer's. According to the lawsuit, in February 2019 she left Greenhaven
 Estates, an assisted-living facility in Sacramento, through a door that locked behind her, and died of
-hypothermia; her family says staff knew she wandered at night. In March 2026 a Sacramento County jury awarded
-her family $110 million against the facility's corporate owner and an investment firm. In another case, in
-Wisconsin, according to authorities, a door alarm went off at 12:41 a.m. and workers ignored it; the resident
-was found dead outside.
+hypothermia; her family says staff knew she wandered at night. In March 2026 a Sacramento County jury awarded her
+family $110 million against the facility's corporate owner and an investment firm. Wandering affects roughly 20–30%
+of nursing-home residents with dementia, and the worst cases happen at night, when, in the experience of the
+memory-care professional on our team, one worker can be covering around 40 residents.
 
-The moment the care team actually cares about is earlier: **a resident leaving their room at night.**
-NightWatch runs entirely on a Snapdragon X Elite laptop at the facility. A hallway camera, door and window
-contacts, a heart-rate watch and bed and location sensors feed an escalation ladder:
+NightWatch notices when a resident leaves their room at night, before they reach a door, and keeps escalating until
+a human responds. It runs entirely on one Snapdragon X Elite laptop at the nurse station. Six things set it apart:
 
-1. **Heads-up**: at night, a resident leaves their room (their feet cross the doorway line on the hallway
-   camera, or the location sensors say so), or the normal-pattern model says what they're doing is unusual for this hour. Quiet alert on
-   the night staff phone, with what has calmed this resident before. Bathroom trips inside the room don't
-   count.
-2. **Urgent**: an exit door or window opens at night, a camera sees someone at the front entrance, or the
-   heads-up got no response. Loud alert that must be acknowledged.
-3. **Emergency**: still no acknowledgement, or the resident is confirmed outside. The nurse station switches
-   to a full-screen emergency view, every staff phone alarms, and the emergency contacts the facility chose
-   (on-call supervisor, family, owner) are notified at the same moment. Emergency services stay in the
-   facility's own chain and are always simulated in this build: NightWatch never calls 911.
+1. **Works offline, entirely on the device.** Two ExecuTorch models run on the laptop: no cloud, no subscription.
+   Detection, escalation and the staff phones (over the local Wi-Fi) keep working with the internet down; the demo
+   proves it by turning Wi-Fi off during the answered run. Reaching family and owner needs a connection, and when
+   there isn't one the screen says so while staff phones are still alerted.
+2. **Keeps escalating until a human responds.** Heads-up → urgent (an exit opens at night, or no answer) →
+   emergency (still no answer, or the resident is outside), with a full-screen takeover at the nurse station.
+   "I'm going" on the phone stops the climb; "Found safe" closes it.
+3. **Earlier, without false alarms.** The trigger is leaving the room, not reaching the door: a hallway camera
+   watches the doorway, and only feet crossing it going out count, so staff walking past don't fire. Bathroom
+   trips inside the room stay quiet; during the day, doors are logged as visits.
+4. **Private by design.** Frames are analysed in memory and dropped: nothing is recorded. The nurse station sees
+   dots, never video. Each camera can be night only (21:00–05:00) or off, and off means the webcam is released.
+   Every switch is logged with who made it.
+5. **Reaches staff, family and owner at once.** At emergency, or when staff press **Call for help**, every staff
+   phone, the on-call supervisor, the family and the owner are notified together (iMessage and ntfy push in the
+   demo; Twilio calls/SMS supported). Calling 911 stays a human decision: emergency numbers are refused, real
+   sending is off until the nurse station turns it on, and only alert text (who, where, when, level) ever leaves
+   the building.
+6. **Fits the care workflow.** After "Found safe", two taps file a care record in the care team's own format and
+   severity scale (1 routine / 2 notable / 3 escalation). The morning shift report is the handover in one page;
+   families get a calm "How was their night?" view; the staff phone works in English and Spanish.
 
-It only climbs when nobody responds. During the day, doors and camera sightings are logged, not alarmed.
-When an alert closes, NightWatch gives it the care team's own severity badge (1 routine / 2 notable /
-3 escalation) and drafts a care-record entry in their format, with affect and intervention left for staff to
-confirm. In the morning, a shift report (`/report/`) gives the handover in one page: totals, response
-times, severity 1/2/3, alerts by resident, a timeline, the draft care records and every camera privacy switch.
+Rules for what we know is dangerous, AI for what we have to see: the escalation is deterministic and testable;
+the models detect people and judge what's unusual. NightWatch supports staff; it does not replace them. It is
+not a medical device.
 
-**Built for the one person on nights:**
-
-- **Staff phone** (`/staff/`): pairs with the laptop using a 6-digit PIN, so only staff devices can see or
-  answer alerts. Each nurse enters their name; one-tap **I'm going** and **Found safe**, **Need backup** to call
-  the other staff, a 2-tap care record after Found safe, English and Spanish.
-- **Emergency contacts:** at level 3, or when staff press **Call for help**, the on-call supervisor, family
-  and owner are notified at once. Channels: iMessage sent from the laptop's Messages app and free ntfy push
-  (used in the demo); Twilio calls and SMS are supported but not used. Safe by default: a dry run until the
-  nurse station turns real sending on (it resets to off at every start), emergency numbers such as 911 are
-  refused, sends are rate-limited, and each message carries alert facts only (who, where, when, level), never
-  video or health readings.
-- **Nurse station** (`/dashboard/`): floor plan, camera radar (positions only, never video), a resident drawer
-  with 30-minute graphs, care-record filing, a full-screen level-3 takeover, an "Offline · still protecting"
-  badge.
-- **Morning report** (`/report/`): the handover in one page (totals, response times, severity 1/2/3, alerts by
-  resident, timeline, care records filed or draft, every camera privacy switch).
-- **Family view** (`/family/?id=R-07`): a calm "How was their night?" for one resident.
-- **Also on the laptop:** home page with every screen and the pairing PIN, settings with a drag-and-drop
-  floor-plan editor, a corridor wall display (`/wall/`), a guided story mode (`/story/`), a help center and a
-  privacy-notice template for families, display modes (high contrast, larger text, reduced motion), and a
-  performance page (`/perf/`) that runs the NPU-vs-CPU benchmark from a button.
-- **Reliability:** state survives a server restart mid-night; pages update live (server-sent events); a QA
-  gate (`scripts/qa.py`, 134 tests) runs before every freeze.
-
-Our design rule: **fixed rules for what we know is dangerous, ML for what we have to see.** A door opening at
-2 a.m. doesn't need a model; recognising a person in a hallway frame does.
-
-The design came from a memory-care professional on our team. In their experience, one night worker can be
-covering around 40 residents, and residents get out even through pinned doors.
-
-NightWatch supports staff; it does not replace them. It is not a medical device.
+**Also on the laptop:** the staff phone pairs with a 6-digit PIN (only staff devices see alerts) and has Need
+backup; a resident drawer with 30-minute graphs; home page, settings with a floor-plan editor, wall display, story
+mode, help center and a privacy-notice template for families (`docs/PRIVACY_NOTICE.md`); display modes (high
+contrast, larger text); a performance page that runs the NPU-vs-CPU benchmark; state that survives a restart;
+and a QA gate (`scripts/qa.py`, 134 tests).
 
 ## How we used ExecuTorch
 
