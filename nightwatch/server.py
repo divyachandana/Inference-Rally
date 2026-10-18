@@ -8,6 +8,8 @@
 Pages:  /dashboard/  (nurse station)   /staff/  (night staff phone)   /sim/  (sensor simulator for demos)
 
 API (JSON):
+    POST /api/pair      {"pin": "123456", "name": "Night nurse phone"} -> {"token"}   (other devices must pair;
+                        then send header X-NightWatch-Token on every /api/ call. The laptop itself is trusted.)
     GET  /api/state
     GET  /api/report    the night's shift report (every alert, response times, severity, draft care records)
     POST /api/sensor    {"type": "door", "exit": "front", "open": true}
@@ -34,6 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from engine import Engine  # noqa: E402
+from pairing import Pairing  # noqa: E402
 from scorer import build  # noqa: E402
 from vision.tracker import Tracker  # noqa: E402
 
@@ -41,6 +44,7 @@ ENGINE: Engine
 DETECTOR: object | None = None
 TRACKERS: dict[str, Tracker] = {}
 TRACK_LOCK = threading.Lock()
+PAIRING: Pairing
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -51,9 +55,22 @@ class Handler(SimpleHTTPRequestHandler):
         if "/api/state" not in self.path:
             super().log_message(fmt, *args)
 
+    def _authorized(self) -> bool:
+        """The laptop is trusted; other devices need a paired token (see pairing.py)."""
+        if PAIRING.allowed(self.client_address[0], self.headers.get("X-NightWatch-Token")):
+            return True
+        self._json({"error": "pair this device first", "pair": True}, 401)
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
+        if self.path.startswith("/api/") and not self._authorized():
+            return None
         if self.path == "/api/state":
-            return self._json(ENGINE.view())
+            view = ENGINE.view()
+            if PAIRING.is_local(self.client_address[0]):
+                # Only the laptop itself sees the PIN, to show it on the nurse-station screen.
+                view["pairing"] = {"pin": PAIRING.pin, "devices": PAIRING.devices}
+            return self._json(view)
         if self.path == "/api/report":
             return self._json(ENGINE.report())
         if self.path in ("", "/"):
@@ -68,6 +85,14 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except json.JSONDecodeError:
             return self._json({"error": "bad json"}, 400)
+        if self.path == "/api/pair":
+            ok, result = PAIRING.pair(self.client_address[0], str(body.get("pin", "")), str(body.get("name", "phone")))
+            if ok:
+                ENGINE.log("pairing", f"New device paired: {str(body.get('name', 'phone'))[:40]}")
+                return self._json({"token": result})
+            return self._json({"error": result}, 403)
+        if not self._authorized():
+            return None
         try:
             if self.path == "/api/sensor":
                 out = ENGINE.sensor(body)
@@ -162,7 +187,7 @@ def _camera_config(body: dict[str, object]) -> dict[str, object]:
 
 
 def main() -> None:
-    global ENGINE, DETECTOR
+    global ENGINE, DETECTOR, PAIRING
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", type=Path, help=".pte normal-pattern model (omit = rule fallback)")
     p.add_argument("--device", default="CPU", help="label for the dashboard: NPU or CPU")
@@ -173,9 +198,14 @@ def main() -> None:
     p.add_argument("--lan", action="store_true", help="listen on the local network so staff phones can connect")
     p.add_argument("--camera-model", type=Path, help="person detector .pte (models/person_ssdlite_*.pte)")
     p.add_argument("--camera-device", default="CPU", help="label for the dashboard: NPU or CPU")
+    p.add_argument("--pin", help="fixed 6-digit pairing PIN for staff phones (default: random each start)")
+    p.add_argument("--unpair-all", action="store_true", help="forget every paired phone")
     args = p.parse_args()
 
     ENGINE = Engine(args.facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
+    PAIRING = Pairing(HERE.parent / "logs" / "paired_devices.json", args.pin)
+    if args.unpair_all:
+        PAIRING.unpair_all()
 
     def loop() -> None:
         while True:
@@ -197,6 +227,7 @@ def main() -> None:
           f"Simulator http://localhost:{args.port}/sim/   Camera http://localhost:{args.port}/camera/")
     if args.lan:
         print("LAN mode: staff phones on this network can open /staff/ using this computer's IP address.")
+        print(f"Phone pairing PIN: {PAIRING.pin}   ({PAIRING.devices} phone(s) already paired)")
     ThreadingHTTPServer((host, args.port), Handler).serve_forever()
 
 

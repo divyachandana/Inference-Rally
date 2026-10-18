@@ -131,6 +131,15 @@ The exported `.pte` and anchors are committed, so the laptop only needs `torch` 
 (no torchvision). For the NPU: `python nightwatch/vision/export_detector.py --backend qnn` on an x86_64 host with
 the QNN SDK, then `--camera-model models/person_ssdlite_qnn.pte --camera-device NPU`.
 
+## Phone pairing (security)
+
+With `--lan`, staff phones reach the laptop over the facility Wi-Fi, so NightWatch makes sure only staff devices
+can see or answer alerts. The laptop itself is trusted; any other device must enter the **6-digit PIN shown on
+the nurse-station dashboard** (also printed at startup) once. It then gets a random token that it sends with every
+request; only a hash is stored (`logs/paired_devices.json`, git-ignored). Wrong PINs lock a device out for 60 s
+after 5 tries. Pages hold no data; every `/api/` call from another device without a valid token gets `401`.
+`--pin 123456` fixes the PIN for a demo; `--unpair-all` forgets every phone.
+
 ## Sensors
 
 | Sensor | Demo | Real |
