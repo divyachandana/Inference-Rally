@@ -59,8 +59,15 @@ If an NPU host can't start, its car shows "MODEL OFFLINE" and keeps going with f
 
 ## Quick start (Windows on Snapdragon)
 
-Needs the QAIRT SDK (`C:\Qualcomm\AIStack\QAIRT\2.46.0.260424`) and the Gemma QNN bundle with its
-`.pte` and `tokenizer.json`. Adjust `qnn:` in `racers.yaml` if yours live elsewhere.
+Needs:
+- the QAIRT SDK (`C:\Qualcomm\AIStack\QAIRT\2.46.0.260424`);
+- the [ExecuTorch QNN bundle](https://github.com/divyachandana/gamehub) with both models under
+  `models\` (`.pte` + `tokenizer.json` each, git-ignored there, copy them in):
+  `gemma4_e2b_sc8380xp_ctxt_4000_ar_l-128\` and `sc8380_qwen3-1_7b_ctxt-8000\`;
+- a patched `host\qnn_llm_host.exe` in that bundle (see [Building the NPU host](#building-the-npu-host)).
+
+Adjust `qnn:` in `racers.yaml` if these live elsewhere. To try the game without any of them, run
+`.venv\Scripts\python -m inference_rally.server --profile sim` (all racers simulated).
 
 ```powershell
 # 1. Python game server (once) — ARM64 Python 3.12
@@ -79,6 +86,26 @@ Open <http://localhost:8000> and press **Enter**. For frontend work with hot rel
 
 In PLAY mode the overview map is locked until you finish — like the models, you only know where the
 exit is (follow the green beam).
+
+### Building the NPU host
+
+`qnn_llm_host.exe` is built from an ExecuTorch checkout (ours: `fde20d91` in `C:\dev\executorch`,
+configured as in the bundle's `.claude/skills/setup`). Its runner must read the attention-mask shape
+from the last two dimensions, because the Gemma `.pte` has a 4-D mask and the Qwen3 one a 3-D mask;
+the stock runner indexes fixed dimensions and crashes on Qwen3 right after prefill. Apply
+[`docs/patches/executorch-runner-mask-rank.patch`](docs/patches/executorch-runner-mask-rank.patch)
+and rebuild just the host:
+
+```powershell
+cd C:\dev\executorch
+git apply C:\path\to\Inference-Rally\docs\patches\executorch-runner-mask-rank.patch
+cd build-arm64-windows
+& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\arm64\MSBuild.exe" `
+  examples\qualcomm\oss_scripts\llama\qnn_llm_host.vcxproj /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /m
+```
+
+Copy `examples\qualcomm\oss_scripts\llama\RelWithDebInfo\qnn_llm_host.exe` to the bundle's `host\`
+folder (next to its `qnn_executorch_backend.dll`).
 
 ### Controls
 
