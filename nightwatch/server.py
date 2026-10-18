@@ -11,6 +11,7 @@ API (JSON):
     POST /api/pair      {"pin": "123456", "name": "Night nurse phone"} -> {"token"}   (other devices must pair;
                         then send header X-NightWatch-Token on every /api/ call. The laptop itself is trusted.)
     GET  /api/state
+    GET  /api/bench     benchmark runs from nightwatch/bench/benchmark.py (newest first)
     GET  /api/report    the night's shift report (every alert, response times, severity, draft care records)
     POST /api/sensor    {"type": "door", "exit": "front", "open": true}
                         {"type": "bed" | "hr" | "motion" | "location", "resident": "R-07", ...}
@@ -73,6 +74,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(view)
         if self.path == "/api/report":
             return self._json(ENGINE.report())
+        if self.path == "/api/bench":
+            return self._json(_bench_runs())
         if self.path in ("", "/"):
             self.send_response(302)
             self.send_header("Location", "/dashboard/")
@@ -123,6 +126,28 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(payload)
+
+
+BENCH_KEYS = ("label", "pte", "pte_mb", "load_rss_mb", "calls", "per_s", "p50_ms", "p95_ms", "p99_ms",
+              "watts_running", "watts_idle", "watts_above_idle", "mj_per_frame", "mj_per_check", "output_check")
+
+
+def _bench_runs(limit: int = 12) -> dict[str, object]:
+    """Benchmark results written by nightwatch/bench/benchmark.py (newest first), without local file paths."""
+    runs = []
+    for path in sorted((HERE.parent / "logs" / "bench").glob("*.json"), reverse=True)[:limit]:
+        try:
+            d = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        host = d.get("host", {})
+        runs.append({"timestamp": d.get("timestamp"), "kind": d.get("kind"), "inputs": d.get("inputs"),
+                     "rate": d.get("requested_rate_per_s"), "power_label": d.get("power_label"),
+                     "on_ac": d.get("power_on_ac"),
+                     "host": {k: host.get(k) for k in ("system", "machine", "executorch")},
+                     "results": [{k: r.get(k) for k in BENCH_KEYS if k in r} for r in d.get("results", [])],
+                     "notes": d.get("notes", [])})
+    return {"runs": runs}
 
 
 def _tracker(cam: str) -> Tracker:

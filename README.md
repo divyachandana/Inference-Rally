@@ -186,6 +186,8 @@ Not a medical device. It supports staff; it does not replace them.
 
 `archive/struggle-detector/` holds the team's earlier prototype (website frustration detector).
 
+**On screen:** `/perf/` shows the live time per check and per frame, plus the latest benchmark runs (NPU vs CPU speedup, energy, output match) as soon as the team runs `nightwatch/bench/benchmark.py`.
+
 ## Benchmark
 
 `nightwatch/bench/benchmark.py` compares each model on the Hexagon NPU (QNN) and the CPU (XNNPACK): p50/p95/p99

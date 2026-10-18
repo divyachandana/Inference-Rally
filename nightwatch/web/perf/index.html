@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NightWatch · On-device performance</title>
+<script src="/assets/auth.js"></script>
+<link rel="stylesheet" href="/assets/theme.css">
+<style>
+  .nw-topbar { justify-content: space-between; }
+  .nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .nav .nw-btn { min-height: 36px; font-size: 13.5px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 18px 24px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  main > * { min-width: 0; }   /* let wide tables scroll inside their card instead of widening the page */
+  @media (max-width: 860px) { main { padding: 14px 16px 28px; } .nw-topbar { padding: 12px 16px; } }
+  .live { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+  .tile { background: var(--nw-bg-2); border: 1px solid var(--nw-line); border-radius: 14px; padding: 14px 16px; }
+  .tile .k { color: var(--nw-muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
+  .tile .v { font: 750 34px/1.1 var(--nw-font-display); font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .tile .v small { font-size: 15px; color: var(--nw-muted); font-weight: 600; margin-left: 4px; }
+  .tile .s { color: var(--nw-ink-2); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+  .hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; padding: 16px 18px; border-radius: 14px;
+          background: linear-gradient(135deg, rgba(61,220,151,.12), rgba(138,180,255,.08)); border: 1px solid #285a4a; }
+  .hero b { font: 800 40px/1 var(--nw-font-display); color: var(--nw-ok); }
+  .hero span { color: var(--nw-ink-2); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 640px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--nw-line); white-space: nowrap; }
+  th { color: var(--nw-muted); font-weight: 600; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+  td.dev b { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: .06em; }
+  .dev-NPU { background: rgba(61,220,151,.16); color: var(--nw-ok); }
+  .dev-CPU { background: rgba(138,180,255,.14); color: var(--nw-accent); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .warn { color: var(--nw-l1); font-size: 13px; }
+  .muted { color: var(--nw-muted); font-size: 13px; }
+  pre { margin: 0; white-space: pre-wrap; font-family: var(--nw-mono); font-size: 13px; background: var(--nw-bg); border: 1px solid var(--nw-line);
+        border-radius: 10px; padding: 12px; color: var(--nw-ink-2); }
+</style>
+</head>
+<body class="nw">
+<header class="nw-topbar">
+  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">On-device performance</div>
+    <div class="nw-brand-sub">ExecuTorch models running on this laptop · measured, not estimated</div></div></div>
+  <nav class="nav" aria-label="Other screens">
+    <a class="nw-btn nw-btn--ghost" href="/dashboard/">Nurse station</a>
+    <a class="nw-btn nw-btn--ghost" href="/camera/">Camera</a>
+    <a class="nw-btn nw-btn--ghost" href="/sim/">Presenter</a>
+  </nav>
+</header>
+<main>
+  <section class="nw-panel">
+    <div class="nw-panel-head"><div class="nw-panel-title">Live right now</div><span class="muted">from the running server</span></div>
+    <div class="live">
+      <div class="tile"><div class="k">Normal-pattern model</div><div class="v" id="pat">–</div><div class="s" id="pat-s">–</div></div>
+      <div class="tile"><div class="k">Person detector</div><div class="v" id="cam">–</div><div class="s" id="cam-s">Camera off</div></div>
+      <div class="tile"><div class="k">Internet needed</div><div class="v">No</div><div class="s">Every model runs on this laptop</div></div>
+    </div>
+  </section>
+  <div id="runs"></div>
+</main>
+<script src="/assets/nw.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const n = (v, d = 2) => (v == null ? '–' : Number(v).toFixed(d));
+if (window.NW) $('logo').innerHTML = NW.icon('chip');
+
+function hostName(h) {
+  if (h.system === 'Windows' && /arm|aarch/i.test(h.machine || '')) return 'Snapdragon laptop (Windows on ARM)';
+  if (h.system === 'Windows') return `Windows ${esc(h.machine)}`;
+  if (h.system === 'Darwin') return 'Dev MacBook (not the demo hardware)';
+  return `${esc(h.system)} ${esc(h.machine)}`;
+}
+
+function runCard(run) {
+  const isDet = run.kind === 'detector';
+  const unit = isDet ? 'frame' : 'check';
+  const rows = run.results.map((r) => {
+    const mj = r[`mj_per_${unit}`];
+    const diff = r.output_check ? (r.output_check.max_abs_logit_diff ?? r.output_check.max_abs_diff) : null;
+    return `<tr><td class="dev"><b class="dev-${esc(r.label)}">${esc(r.label)}</b></td><td>${esc((r.pte || '').split(/[\\/]/).pop())}</td>
+      <td>${n(r.p50_ms, isDet ? 1 : 3)}</td><td>${n(r.p95_ms, isDet ? 1 : 3)}</td><td>${n(r.p99_ms, isDet ? 1 : 3)}</td>
+      <td>${r.per_s == null ? '–' : Math.round(r.per_s).toLocaleString()}</td><td>${n(r.watts_above_idle, 2)}</td><td>${n(mj, isDet ? 1 : 3)}</td>
+      <td>${n(r.pte_mb, 1)}</td><td>${diff == null ? '–' : Number(diff).toExponential(1)}</td></tr>`;
+  }).join('');
+  const npu = run.results.find((r) => r.label === 'NPU'), cpu = run.results.find((r) => r.label === 'CPU');
+  const hero = npu && cpu && npu.p50_ms && cpu.p50_ms
+    ? `<div class="hero"><b>${(cpu.p50_ms / npu.p50_ms).toFixed(1)}×</b><span>faster on the Hexagon NPU than the CPU (median ${n(npu.p50_ms, isDet ? 1 : 3)} vs ${n(cpu.p50_ms, isDet ? 1 : 3)} ms per ${unit})</span></div>` : '';
+  const power = run.results.some((r) => r.watts_above_idle != null)
+    ? (run.on_ac ? '<div class="warn">Power was measured while plugged in: energy numbers are not meaningful. Re-run on battery.</div>' : '')
+    : '<div class="muted">No power numbers in this run (run it on battery, without --no-power, to measure energy).</div>';
+  const ts = String(run.timestamp || '').replace(/^(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d).*/, '$1-$2-$3 $4:$5');
+  return `<section class="nw-panel">
+    <div class="nw-panel-head"><div class="nw-panel-title">${isDet ? 'Person detector (camera)' : 'Normal-pattern model'}</div><span class="muted">${esc(ts)}</span></div>
+    <div class="meta"><span class="nw-chip">${hostName(run.host || {})}</span><span class="nw-chip">ExecuTorch <b>${esc(run.host?.executorch || '?')}</b></span>
+      <span class="nw-chip">${run.rate ? `${esc(run.rate)} per second (realistic load)` : 'as fast as possible'}</span></div>
+    ${hero}
+    <div class="tablewrap"><table>
+      <thead><tr><th>Device</th><th>Model file</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>Per second</th><th>Watts above idle</th><th>mJ per ${unit}</th><th>Size MB</th><th>Output diff</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    ${power}
+  </section>`;
+}
+
+async function load() {
+  try {
+    const [b, s] = await Promise.all([fetch('/api/bench').then((r) => r.json()), fetch('/api/state').then((r) => r.json())]);
+    $('pat').innerHTML = s.scorer.p50_ms == null ? '–' : `${n(s.scorer.p50_ms, 3)}<small>ms</small>`;
+    $('pat-s').textContent = `${s.scorer.name} on ${s.scorer.device}`;
+    const live = (s.cameras || []).some((c) => c.live);
+    $('cam').innerHTML = live && s.camera_p50_ms != null ? `${n(s.camera_p50_ms, 1)}<small>ms/frame</small>` : '–';
+    $('cam-s').textContent = live ? 'Hallway camera live' : 'Camera off: start it on /camera/';
+    const latest = {};
+    for (const r of b.runs) if (!latest[r.kind]) latest[r.kind] = r;
+    const cards = ['detector', 'pattern'].filter((k) => latest[k]).map((k) => runCard(latest[k])).join('');
+    $('runs').innerHTML = cards || `<section class="nw-panel"><div class="nw-panel-title">No benchmark runs yet</div>
+      <p class="muted">On the Snapdragon laptop, unplugged, run:</p>
+      <pre>python nightwatch/bench/benchmark.py --pte models/person_ssdlite_qnn_int8.pte:NPU --pte models/person_ssdlite_xnnpack.pte:CPU --rate max
+python nightwatch/bench/benchmark.py --pte models/normal_pattern_qnn.pte:NPU --pte models/normal_pattern_xnnpack.pte:CPU</pre>
+      <p class="muted">Results appear here automatically.</p></section>`;
+  } catch { $('runs').innerHTML = '<section class="nw-panel">Server not reachable</section>'; }
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
