@@ -33,6 +33,9 @@
     next: '<path d="m9 6 6 6-6 6"/>',
     back: '<path d="m15 6-6 6 6 6"/>',
     print: '<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2"/><rect x="6" y="14" width="12" height="7"/>',
+    volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+    mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><circle cx="12" cy="17.3" r=".8" fill="currentColor"/>',
     heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
   };
   const icon = (name, cls = '') =>
@@ -98,7 +101,7 @@
   // Camera privacy state. Order matters: off beats paused beats not-started.
   const camState = (c) => {
     if (c.enabled === false) return { key: 'off', word: 'OFF', long: 'Camera off', sub: 'Turned off by staff · frames dropped, nothing analysed' };
-    if (c.active === false) return { key: 'paused', word: 'PAUSED', long: 'Paused · night only', sub: 'Watches 21:00-05:00 only · nothing analysed now' };
+    if (c.active === false) return { key: 'paused', word: 'PAUSED', long: 'Paused · night only', sub: `${c.paused_reason ? c.paused_reason.replace(/^night only/i, 'Watches at night only') : 'Watches at night only'} · nothing analysed now` };
     if (!c.live) return { key: 'idle', word: 'NOT STARTED', long: 'Not started', sub: 'On, but no frames yet · start it on /camera/' };
     const n = (c.tracks || []).length || c.persons || 0;
     return n ? { key: 'hit', word: `${n} ${n > 1 ? 'PEOPLE' : 'PERSON'}`, long: 'Watching', sub: '' } : { key: 'on', word: 'CLEAR', long: 'Watching', sub: '' };
@@ -122,5 +125,73 @@
     return false;
   };
 
-  window.NW = { camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
+  // Night band from state.night_hours (configurable): "21:00-05:00".
+  const hh = (h) => `${String(h).padStart(2, '0')}:00`;
+  const nightBand = (s) => { const [a, b] = (s && s.night_hours) || [21, 5]; return { start: hh(a), end: hh(b), label: `${hh(a)}-${hh(b)}` }; };
+
+  // Care-record filing form (shared by dashboard, report, staff). Pick-lists come from state.taxonomy.
+  const opts = (list, first) => `<option value="">${esc(first)}</option>` + (list || []).map((v) => `<option>${esc(v)}</option>`).join('');
+  const recordForm = (a, tax, labels = {}) => {
+    const L = { title: 'Confirm and file', affect: 'Affect', intervention: 'Intervention', alt: 'Non-drug alternative', optional: 'optional',
+                note: 'Note', choose: 'Choose…', none: 'None', file: 'File record', ...labels };
+    return `<form class="nw-recform" data-rec="${esc(a.id)}" novalidate>
+      <div class="k">${icon('note')}${esc(L.title)}</div>
+      <label class="nw-field">${esc(L.affect)}<select class="nw-select" name="affect" required>${opts(tax && tax.affect, L.choose)}</select></label>
+      <label class="nw-field">${esc(L.intervention)}<select class="nw-select" name="intervention" required>${opts(tax && tax.intervention, L.choose)}</select></label>
+      <label class="nw-field">${esc(L.alt)} <span class="opt">(${esc(L.optional)})</span><select class="nw-select" name="nondrug_alt">${opts(tax && tax.nondrug_alt, L.none)}</select></label>
+      <label class="nw-field full">${esc(L.note)} <span class="opt">(${esc(L.optional)})</span><textarea class="nw-textarea" name="note" maxlength="500" rows="2"></textarea></label>
+      <div class="row"><button class="nw-btn nw-btn--primary" type="submit">${icon('check')}${esc(L.file)}</button><span class="nw-err" role="alert"></span></div>
+    </form>`;
+  };
+  // One delegated submit handler per page. getBy() -> name; after(result) on success.
+  const bindRecordForms = (getBy, after, msgs = {}) => {
+    document.addEventListener('submit', async (e) => {
+      const f = e.target.closest('form.nw-recform'); if (!f) return;
+      e.preventDefault();
+      const err = f.querySelector('.nw-err'), btn = f.querySelector('button[type=submit]');
+      f.querySelectorAll('.nw-field').forEach((x) => x.classList.remove('bad'));
+      const missing = ['affect', 'intervention'].filter((k) => !f.elements[k].value);
+      if (missing.length) {
+        missing.forEach((k) => f.elements[k].closest('.nw-field').classList.add('bad'));
+        err.textContent = msgs.missing || 'Choose an affect and an intervention.'; f.elements[missing[0]].focus(); return;
+      }
+      btn.disabled = true; err.textContent = '';
+      try {
+        const res = await post('/api/record', { alert: +f.dataset.rec, affect: f.elements.affect.value, intervention: f.elements.intervention.value,
+          nondrug_alt: f.elements.nondrug_alt.value || null, note: f.elements.note.value, by: getBy() });
+        const out = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
+        if (out.error) { err.textContent = out.error; btn.disabled = false; return; }
+        f.dataset.done = '1'; after && after(out, f);
+      } catch { err.textContent = msgs.network || 'Could not reach the laptop. Try again.'; btn.disabled = false; }
+    });
+  };
+  const filedBadge = (r) => `<span class="nw-filed">${icon('check')}Filed by ${esc(r.confirmed_by || 'staff')}${r.confirmed_at ? ` at ${esc(String(r.confirmed_at).slice(0, 5))}` : ''}</span>`;
+  const isDirty = (root = document) => [...root.querySelectorAll('form.nw-recform')].some((f) =>
+    !f.dataset.done && ([...f.elements].some((el) => (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') && el.value) || f.contains(document.activeElement)));
+
+  // Alert tones (WebAudio). Needs a user gesture before the context can start.
+  let actx = null;
+  const audio = () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch {} return actx; };
+  const tone = (level) => {
+    const ctx = actx; if (!ctx || ctx.state !== 'running') return;
+    const seq = level >= 3 ? [988, 740, 988, 740, 988] : level === 2 ? [660, 880] : [520];
+    seq.forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.28;
+      o.type = level >= 3 ? 'square' : 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(level >= 3 ? 0.12 : 0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.24);
+    });
+  };
+
+  // Keep keyboard focus inside an open dialog/drawer.
+  const trapFocus = (root, e) => {
+    if (e.key !== 'Tab') return;
+    const f = [...root.querySelectorAll('a[href], button:not([disabled]), select, textarea, input, [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  };
+  const typing = (e) => { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable); };
+
+  window.NW = { nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
 })();

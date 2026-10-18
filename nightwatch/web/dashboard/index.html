@@ -139,6 +139,50 @@
   .nw-chip.pair .pin { font-family: var(--nw-mono); font-size: 14px; letter-spacing: .14em; color: var(--nw-accent); }
   .top-right .nw-btn { min-height: 36px; font-size: 13.5px; }
 
+  /* backup + records */
+  .a-backup { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 650;
+              color: #ffd0a8; background: var(--nw-l2-bg); border: 1px solid rgba(255, 143, 63, .45); }
+  .a-backup .nw-ico { color: var(--nw-l2); }
+  .rec.is-filed { border-color: rgba(61, 220, 151, .35); }
+  .rec dd.filled { color: var(--nw-ok); font-weight: 650; }
+  .rec-counts { font-size: 12px; color: var(--nw-muted); }
+
+  /* clickable residents */
+  .rcard { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; transition: border-color .15s, transform .08s; }
+  .rcard:hover { border-color: var(--nw-accent); }
+  .rcard .more { font-size: 11.5px; color: var(--nw-accent); margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; }
+  #map .res { cursor: pointer; }
+  #map .res:focus { outline: none; } #map .res:focus-visible .core { stroke: var(--nw-accent); stroke-width: 4; }
+
+  /* drawer content */
+  .dr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .dr-head h2 { margin: 0; font: 800 24px/1.15 var(--nw-font-display); }
+  .dr-head .sub { color: var(--nw-muted); font-size: 13.5px; margin-top: 4px; }
+  .dr-now { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .dr-now > div { border: 1px solid var(--nw-line); border-radius: 12px; padding: 9px 11px; background: var(--nw-bg-2); }
+  .dr-now .k { font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--nw-faint); }
+  .dr-now .v { font: 750 18px/1.2 var(--nw-font-display); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .dr-sec { font-size: 11.5px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--nw-faint); margin: 18px 0 8px; }
+  .spark { border: 1px solid var(--nw-line); border-radius: 12px; background: var(--nw-bg-2); padding: 8px 10px 6px; margin-bottom: 10px; }
+  .spark .h { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--nw-muted); margin-bottom: 4px; }
+  .spark .h b { color: var(--nw-ink); font-variant-numeric: tabular-nums; }
+  .spark svg { width: 100%; height: 80px; display: block; }
+  .spark .ax { display: flex; justify-content: space-between; font: 11px var(--nw-mono); color: var(--nw-faint); }
+  .zlegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--nw-muted); }
+  .zlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .dr-alert { border: 1px solid var(--nw-line); border-left: 5px solid var(--lvl); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--nw-bg-2); }
+  .dr-alert .t { font-weight: 650; margin: 6px 0 2px; } .dr-alert .o { font-size: 12.5px; color: var(--nw-muted); }
+
+  /* event log filters */
+  .logbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .logbar .nw-input { flex: 1 1 180px; min-height: 34px; padding: 6px 10px; font-size: 13.5px; width: auto; }
+  .log .rel { display: block; font-size: 10.5px; color: var(--nw-faint); }
+
+  /* sound toggle + help */
+  #sound[aria-pressed="true"] { border-color: var(--nw-ok); color: var(--nw-ok); }
+  .keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; align-items: center; margin: 14px 0 4px; font-size: 15px; }
+  .hint-keys { font-size: 12px; color: var(--nw-faint); }
+
   @media (max-width: 640px) {
     .top-mid { order: 3; flex-basis: 100%; } .summary { width: 100%; border-radius: 14px; }
     .top-right { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px 10px; } .top-right .nw-offline.is-on { order: 9; width: 100%; justify-content: center; } #report-link { padding: 0 10px; } .nw-clock { font-size: 30px; } .nw-chip { white-space: normal; display: inline-block; } .nw-chip .nw-ico { margin-right: 4px; } .nw-chip .nw-dot { display: inline-block; margin-right: 4px; }
@@ -160,6 +204,8 @@
   <div class="top-mid"><div class="summary" id="summary" role="status" aria-live="polite"></div></div>
   <div class="top-right">
     <span id="offline-host"></span>
+    <button class="nw-btn nw-btn--ghost" id="sound" aria-pressed="false" title="Alert sound (M)">Sound off</button>
+    <button class="nw-btn nw-btn--ghost" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><span class="nw-kbd">?</span></button>
     <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener" id="perf-link">Performance</a>
     <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener" id="report-link">Shift report</a>
     <span class="nw-mode" id="mode">–</span>
@@ -198,8 +244,12 @@
       <div class="residents" id="residents"></div>
     </section>
     <section class="nw-panel" aria-labelledby="h-log">
-      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-log">Event log</h2></div>
-      <ul class="log" id="log"></ul>
+      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-log">Event log</h2><span class="hint-keys">newest first · <span class="nw-kbd">/</span> to search</span></div>
+      <div class="logbar" role="group" aria-label="Filter the event log">
+        <div id="logchips" style="display:contents"></div>
+        <input class="nw-input" id="logq" type="search" placeholder="Filter text…" aria-label="Filter event log text">
+      </div>
+      <ul class="log" id="log" aria-live="off"></ul>
     </section>
   </div>
   <div class="col col-side">
@@ -213,14 +263,27 @@
       <div class="radar-legend" aria-hidden="true"><span><i style="background:var(--nw-room)"></i>Room side</span><span><i style="background:var(--nw-hall)"></i>Hallway side</span><span><i style="background:var(--nw-ink-2)"></i>Not sure yet</span><span>No video is shown or stored</span></div>
     </section>
     <section class="nw-panel" aria-labelledby="h-rec">
-      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-rec">Draft care records</h2></div>
+      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-rec">Care records</h2><span class="rec-counts" id="rec-counts"></span></div>
       <div id="records"></div>
     </section>
   </div>
 </main>
+<div class="nw-scrim" id="scrim" hidden></div>
+<aside class="nw-drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dr-title"><div id="dr-body"></div></aside>
+<div class="nw-modal" id="help" hidden role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
+  <div class="dr-head"><h2 id="help-title">Keyboard shortcuts</h2><button class="nw-x" data-close aria-label="Close">✕</button></div>
+  <div class="keys">
+    <span class="nw-kbd">A</span><span>Acknowledge the top alert</span>
+    <span class="nw-kbd">F</span><span>Found safe: close the top alert</span>
+    <span class="nw-kbd">R</span><span>Open the top alert's resident</span>
+    <span class="nw-kbd">M</span><span>Sound on / off</span>
+    <span class="nw-kbd">/</span><span>Search the event log</span>
+    <span class="nw-kbd">?</span><span>This help</span>
+    <span class="nw-kbd">Esc</span><span>Close a drawer or this help</span>
+  </div></div></div>
 <script src="/assets/nw.js"></script>
 <script>
-const { camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
+const { nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
 $('report-link').insertAdjacentHTML('afterbegin', icon('report'));
@@ -271,7 +334,7 @@ function buildMap(s) {
       ${svgIcon('camera', x, y, 10, 'var(--nw-accent)')}<circle class="cdot" cx="${x + 9}" cy="${y - 7}" r="3" fill="var(--nw-faint)"/></g>`;
   }).join('');
   const people = s.residents.map((r) => `
-    <g class="res" id="res-${esc(r.id)}">
+    <g class="res" id="res-${esc(r.id)}" tabindex="0" role="button" aria-label="Open ${esc(r.id)} details">
       <circle class="halo" r="17" fill="none" stroke-width="3"/>
       <circle class="core" r="10" stroke="#070b14" stroke-width="2.5"/>
       <text class="rid" y="25" fill="var(--nw-ink)" font-size="10.5" font-weight="700" text-anchor="middle">${esc(r.id)}</text>
@@ -352,7 +415,7 @@ function timerHTML(a, s) {
   const cap = a.level < 3 ? `Level ${a.level + 1} if nobody responds` : 'Next contact step';
   return `<div class="a-timer"><span class="cap">${cap}</span>${ring(a.escalates_in_s, a.escalates_in_s / limitFor(a, s), cap)}</div>`;
 }
-function alertKey(a) { return [a.level, a.acked_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
+function alertKey(a) { return [a.level, a.acked_by, a.backup_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
 function alertHTML(a, s) {
   const L = LEVELS[a.level];
   const [tip, ...more] = a.suggestions;
@@ -363,7 +426,9 @@ function alertHTML(a, s) {
       ${timerHTML(a, s)}
     </div>
     <h3 class="a-title">${esc(a.title)}</h3>
+    ${a.resident ? `<button class="nw-btn nw-btn--ghost" data-open-res="${esc(a.resident)}" style="min-height:32px;font-size:13px;margin:-2px 0 10px">${icon('user')}Open ${esc(a.resident)}</button>` : ''}
     ${a.resident ? `<div class="a-who"><span>${icon('user')}${esc(a.resident)}${a.room ? ` · Room ${esc(a.room)}` : ''}</span>${a.description ? `<span>${icon('eye')}${esc(a.description)}</span>` : ''}</div>` : ''}
+    ${a.backup_by ? `<div class="a-backup" role="status">${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b> · all staff phones alerted</div>` : ''}
     ${tip ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(tip)}</div>${more.map((m) => `<div class="nw-tip-more">${esc(m)}</div>`).join('')}</div></div>` : ''}
     <div class="a-sec">Escalation history</div>
     ${timeline(a.history)}
@@ -400,45 +465,100 @@ function renderAlerts(s) {
 }
 
 /* ------------------------------------------------------------------ care records */
-const REC_FIELDS = ['behaviour', 'affect', 'frequency', 'time_of_day', 'night_band', 'location_type', 'trigger', 'intervention', 'outcome'];
-let recKey = null;
-function renderRecords(s) {
-  const recs = s.recent.slice().reverse();
-  const key = recs.map((a) => a.id).join(',');
-  if (key === recKey) return; recKey = key;
-  $('records').innerHTML = recs.length ? recs.map((a) => {
-    const r = a.record || {};
-    return `<article class="rec">
-      <div class="r1"><span class="nw-sev nw-sev--${r.severity}"><span class="n" aria-hidden="true">${r.severity ?? '–'}</span>Severity ${r.severity ?? '–'} · ${esc(r.severity_label || SEVERITY[r.severity] || '')}</span><span class="draft">Draft</span></div>
-      <div class="t">${esc(a.title)}</div>
-      <div class="o">${esc(a.resident || '')}${a.resident ? ' · ' : ''}${esc(a.resolved)} · reached level ${a.max_level}</div>
-      <dl>${REC_FIELDS.filter((k) => r[k]).map((k) => `<dt>${k.replace(/_/g, ' ')}</dt><dd class="${/staff to confirm/.test(r[k]) ? 'tbc' : ''}">${esc(r[k])}</dd>`).join('')}</dl>
-      <div class="by">${icon('note')} ${esc(r.draft_by || '')}</div>
-    </article>`;
-  }).join('') : `<div class="nw-empty" style="padding:8px 4px">${icon('note')}<div><b>Nothing to file yet</b>Closed alerts become draft entries in the care team's record format.</div></div>`;
+const REC_FIELDS = ['behaviour', 'affect', 'frequency', 'time_of_day', 'night_band', 'location_type', 'trigger', 'intervention', 'nondrug_alt', 'outcome', 'note'];
+let TAX = null;
+function recHTML(a) {
+  const r = a.record || {}, filed = r.status === 'filed';
+  return `<article class="rec${filed ? ' is-filed' : ''}" data-id="${a.id}" data-key="${esc(a.id + '|' + (r.status || ''))}">
+    <div class="r1"><span class="nw-sev nw-sev--${r.severity}"><span class="n" aria-hidden="true">${r.severity ?? '–'}</span>Severity ${r.severity ?? '–'} · ${esc(r.severity_label || SEVERITY[r.severity] || '')}</span>
+      ${filed ? filedBadge(r) : `<span class="nw-draftbadge">${icon('note')}Draft · to file</span>`}</div>
+    <div class="t">${esc(a.title)}</div>
+    <div class="o">${esc(a.resident || '')}${a.resident ? ' · ' : ''}${esc(a.resolved)} · reached level ${a.max_level}</div>
+    <dl>${REC_FIELDS.filter((k) => r[k]).map((k) => `<dt>${k === 'nondrug_alt' ? 'non-drug alternative' : k.replace(/_/g, ' ')}</dt><dd class="${/staff to confirm/.test(r[k]) ? 'tbc' : filed && (k === 'affect' || k === 'intervention') ? 'filled' : ''}">${esc(r[k])}</dd>`).join('')}</dl>
+    ${filed ? '' : recordForm(a, TAX)}
+  </article>`;
 }
+function renderRecords(s) {
+  TAX = s.taxonomy || TAX;
+  const box = $('records');
+  const recs = s.recent.filter((a) => a.record).slice().reverse();
+  const nDraft = recs.filter((a) => a.record.status !== 'filed').length;
+  $('rec-counts').textContent = recs.length ? `${nDraft} to file · ${recs.length - nDraft} filed` : '';
+  if (!recs.length) {
+    if (!box.querySelector('.nw-empty')) box.innerHTML = `<div class="nw-empty" style="padding:8px 4px">${icon('note')}<div><b>Nothing to file yet</b>Closed alerts become draft entries in the care team's record format.</div></div>`;
+    return;
+  }
+  box.querySelector('.nw-empty')?.remove();
+  const keep = new Set(recs.map((a) => String(a.id)));
+  box.querySelectorAll('.rec').forEach((el) => { if (!keep.has(el.dataset.id)) el.remove(); });
+  recs.forEach((a, i) => {   // keyed: a half-filled form is never wiped by the next poll
+    let el = box.querySelector(`.rec[data-id="${a.id}"]`);
+    const key = a.id + '|' + (a.record.status || '');
+    if (!el || el.dataset.key !== key) {
+      const tmp = document.createElement('div'); tmp.innerHTML = recHTML(a);
+      const fresh = tmp.firstElementChild; el ? el.replaceWith(fresh) : box.appendChild(fresh); el = fresh;
+    }
+    if (box.children[i] !== el) box.insertBefore(el, box.children[i]);
+  });
+}
+bindRecordForms(() => 'Nurse station', () => tick());
 
 /* ------------------------------------------------------------------ residents + log + header */
 function renderResidents(s) {
   const alertOf = {};
   for (const a of s.alerts) if (a.resident && !alertOf[a.resident]) alertOf[a.resident] = a;
-  $('residents').innerHTML = s.residents.map((r) => {
+  const box = $('residents');
+  if (box.dataset.ids !== s.residents.map((r) => r.id).join(',')) {
+    box.dataset.ids = s.residents.map((r) => r.id).join(',');
+    box.innerHTML = s.residents.map((r) => `<button type="button" class="rcard" data-open-res="${esc(r.id)}" aria-label="Open ${esc(r.id)} details"><span class="inner" style="display:block"></span></button>`).join('');
+  }
+  for (const r of s.residents) {
+    const el = box.querySelector(`[data-open-res="${CSS.escape(r.id)}"]`); if (!el) continue;
     const a = alertOf[r.id];
+    el.className = `rcard${a ? ` alerting nw-l${a.level}` : ''}`;
     const where = r.in_bed ? `${icon('bed')}In bed · Room ${esc(r.room)}` : `${icon('walk')}${esc(ZONE[r.zone] || r.zone)}`;
-    return `<div class="rcard${a ? ` alerting nw-l${a.level}` : ''}">
-      <div class="r1"><span class="id">${esc(r.id)}</span>${a ? `<span class="tag">LEVEL ${a.level} · ${LEVELS[a.level].word}</span>` : `<span class="where">${where}</span>`}</div>
-      ${a ? `<div class="where" style="margin-top:4px">${where}</div>` : ''}
-      <div class="r2"><span>${icon('heart')} <b>${r.hr ? Math.round(r.hr) : '–'}</b> bpm</span><span>Wander risk <b>${Math.round(r.risk * 100)}%</b></span></div>
-      <div class="unus"><span>Unusual for right now</span><b>${Math.round(r.unusual * 100)}%</b></div>
-      <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(r.unusual * 100)}" aria-label="${esc(r.id)} unusual for right now"><div style="width:${Math.max(2, r.unusual * 100)}%;background:${heat(r.unusual)}"></div></div>
-    </div>`;
-  }).join('');
+    el.querySelector('.inner').innerHTML = `
+      <span class="r1"><span class="id">${esc(r.id)}</span>${a ? `<span class="tag">LEVEL ${a.level} · ${LEVELS[a.level].word}</span>` : `<span class="where">${where}</span>`}</span>
+      ${a ? `<span class="where" style="margin-top:4px;display:flex">${where}</span>` : ''}
+      <span class="r2"><span>${icon('heart')} <b>${r.hr ? Math.round(r.hr) : '–'}</b> bpm</span><span>Wander risk <b>${Math.round(r.risk * 100)}%</b></span></span>
+      <span class="unus"><span>Unusual for right now</span><b>${Math.round(r.unusual * 100)}%</b></span>
+      <span class="bar" style="display:block" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(r.unusual * 100)}" aria-label="${esc(r.id)} unusual for right now"><span style="display:block;height:100%;border-radius:3px;width:${Math.max(2, r.unusual * 100)}%;background:${heat(r.unusual)}"></span></span>
+      <span class="more">Details, last 30 min ${icon('next')}</span>`;
+  }
 }
-const LOGK = { L1: 'Level 1', L2: 'Level 2', L3: 'Level 3', ack: 'Ack', resolved: 'Resolved', contact: 'Contact', sensor: 'Sensor', door: 'Door', clock: 'Clock', camera: 'Camera', pairing: 'Pairing' };
+const LOGK = { L1: 'Level 1', L2: 'Level 2', L3: 'Level 3', ack: 'Ack', resolved: 'Resolved', contact: 'Contact', sensor: 'Sensor', door: 'Door', clock: 'Clock', camera: 'Camera', pairing: 'Pairing', record: 'Record', settings: 'Settings' };
+const LOG_GROUPS = [
+  ['alerts', 'Alerts', ['L1', 'L2', 'L3', 'ack', 'resolved']],
+  ['sensors', 'Sensors', ['sensor', 'door']],
+  ['camera', 'Camera', ['camera']],
+  ['contact', 'Contact', ['contact']],
+  ['records', 'Records', ['record']],
+  ['settings', 'Settings', ['settings', 'clock', 'pairing']],
+];
+const logOn = new Set(LOG_GROUPS.map((g) => g[0]));
+const groupOf = (kind) => (LOG_GROUPS.find((g) => g[2].includes(kind)) || ['settings'])[0];
+const secs = (t) => { const [h, m, x] = String(t).split(':').map(Number); return h * 3600 + m * 60 + (x || 0); };
+function rel(t, now) {
+  let d = secs(now) - secs(t); if (d < 0) d += 86400;
+  return d < 5 ? 'just now' : d < 60 ? `${d} s ago` : d < 3600 ? `${Math.floor(d / 60)} min ago` : `${Math.floor(d / 3600)} h ${Math.floor((d % 3600) / 60)} min ago`;
+}
 function renderLog(s) {
-  $('log').innerHTML = s.events.length ? s.events.map((e) => `<li><time>${esc(e.t)}</time><span class="k k-${esc(e.kind)}">${esc(LOGK[e.kind] || e.kind)}</span><span>${esc(e.text)}</span></li>`).join('')
-    : '<li><span></span><span></span><span style="color:var(--nw-muted)">Quiet so far.</span></li>';
+  const counts = {};
+  for (const e of s.events) { const g = groupOf(e.kind); counts[g] = (counts[g] || 0) + 1; }
+  if (!$('logchips').children.length) {
+    $('logchips').innerHTML = LOG_GROUPS.map(([id, label]) => `<button type="button" class="nw-chipbtn" data-logg="${id}" aria-pressed="true">${label} <span class="n"></span></button>`).join('');
+  }
+  $('logchips').querySelectorAll('[data-logg]').forEach((b) => { b.setAttribute('aria-pressed', String(logOn.has(b.dataset.logg))); b.querySelector('.n').textContent = counts[b.dataset.logg] || 0; });
+  const q = $('logq').value.trim().toLowerCase();
+  const rows = s.events.filter((e) => logOn.has(groupOf(e.kind)) && (!q || `${e.text} ${e.kind}`.toLowerCase().includes(q)));
+  $('log').innerHTML = rows.length ? rows.map((e) => `<li><time title="${esc(e.t)}">${esc(e.t)}<span class="rel">${esc(rel(e.t, s.clock))}</span></time><span class="k k-${esc(e.kind)}">${esc(LOGK[e.kind] || e.kind)}</span><span>${esc(e.text)}</span></li>`).join('')
+    : `<li><span></span><span></span><span style="color:var(--nw-muted)">${s.events.length ? 'Nothing matches the filter.' : 'Quiet so far.'}</span></li>`;
 }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-logg]'); if (!b) return;
+  logOn.has(b.dataset.logg) ? logOn.delete(b.dataset.logg) : logOn.add(b.dataset.logg);
+  if (last) renderLog(last);
+});
 function renderHeader(s) {
   $('facility').textContent = `${s.facility} · Nurse station`;
   const [hh, mm, ss] = s.clock.split(':');
@@ -454,7 +574,7 @@ function renderHeader(s) {
   } else {
     const inBed = s.residents.filter((r) => r.in_bed).length;
     sum.className = 'summary';
-    sum.innerHTML = `${icon('shield')}<b>All quiet</b><span>${inBed} of ${s.residents.length} residents in bed · ${s.night ? 'doors are watched until 05:00' : 'doors logged as visits until 21:00'}</span>`;
+    sum.innerHTML = `${icon('shield')}<b>All quiet</b><span>${inBed} of ${s.residents.length} residents in bed · ${s.night ? `doors are watched until ${nightBand(s).end}` : `doors logged as visits until ${nightBand(s).start}`}</span>`;
   }
   const ms = s.scorer.p50_ms;
   $('c-model').innerHTML = `${icon('chip')}<b>${esc(s.scorer.name)}</b> on <b>${esc(s.scorer.device)}</b> · <b>${ms == null ? '–' : ms.toFixed(2) + ' ms'}</b> per check`;
@@ -487,7 +607,7 @@ function renderTakeover(s) {
   const box = $('takeover');
   if (!l3.length) { box.hidden = true; toKey = null; return; }
   const a = l3[0];
-  const key = [a.id, a.acked_by, a.title, a.suggestions[0], l3.length].join('|');
+  const key = [a.id, a.acked_by, a.backup_by, a.title, a.suggestions[0], l3.length].join('|');
   box.hidden = false;
   if (key !== toKey) {
     toKey = key;
@@ -500,6 +620,7 @@ function renderTakeover(s) {
           <span>${icon('pin')}<b class="to-where"></b></span>
           <span>${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b></span>
           <span>${icon('clock')}First alert <b class="to-age"></b></span>
+          ${a.backup_by ? `<span>${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b></span>` : ''}
         </div>
         ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div></div></div>` : ''}
         ${l3.length > 1 ? `<div class="to-more" style="margin-top:8px">+ ${l3.length - 1} more emergency alert${l3.length > 2 ? 's' : ''} below</div>` : ''}
@@ -592,8 +713,131 @@ document.addEventListener('click', async (e) => {
 async function tick() {
   let s;
   try { s = await (await fetch('/api/state')).json(); } catch { $('summary').innerHTML = '<b>Server not reachable</b>'; return; }
+  last = s; sounds(s);
   renderHeader(s); renderTakeover(s); updateMap(s); renderAlerts(s); renderRadar(s); renderRecords(s); renderResidents(s); renderLog(s);
 }
+/* ------------------------------------------------------------------ sound */
+let last = null;
+const SOUND_KEY = 'nw-dash-sound';
+let soundPref = false; try { soundPref = localStorage.getItem(SOUND_KEY) === 'on'; } catch {}
+const heard = {};
+function syncSound() {
+  const ctx = soundPref ? audio() : null, running = ctx && ctx.state === 'running';
+  $('sound').setAttribute('aria-pressed', String(soundPref));
+  $('sound').innerHTML = `${icon(soundPref ? 'volume' : 'mute')}${soundPref ? (running ? 'Sound on' : 'Sound on · click to enable') : 'Sound off'}`;
+}
+function toggleSound() {
+  soundPref = !soundPref; try { localStorage.setItem(SOUND_KEY, soundPref ? 'on' : 'off'); } catch {}
+  if (soundPref) { audio(); setTimeout(() => { tone(2); syncSound(); }, 60); }
+  syncSound();
+}
+$('sound').onclick = toggleSound;
+// Browsers only start audio after a gesture: the first click or key anywhere unlocks it.
+['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (soundPref) { audio(); setTimeout(syncSound, 50); } }, { once: true }));
+function sounds(s) {
+  for (const a of s.alerts) {
+    if ((heard[a.id] || 0) < a.level && !a.acked_by && a.level >= 2 && soundPref && last) tone(a.level);
+    heard[a.id] = Math.max(heard[a.id] || 0, a.level);
+  }
+}
+syncSound();
+
+/* ------------------------------------------------------------------ resident drawer */
+let drawerId = null, drawerTimer = null, drawerReturn = null;
+const ZCOL = { room: 'rgba(205,217,255,.16)', corridor: 'rgba(138,180,255,.30)', common: 'rgba(61,220,151,.28)', exit: 'rgba(255,143,63,.40)', outside: 'rgba(255,82,99,.45)' };
+function spark(hist, key, { min, max, ref, refLabel, color, fmt }) {
+  const W = 320, H = 80, n = hist.length;
+  if (n < 2) return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Not enough history yet"><text x="${W / 2}" y="${H / 2}" fill="var(--nw-faint)" font-size="12" text-anchor="middle">Collecting… one sample every 5 s</text></svg>`;
+  const x = (i) => (i / (n - 1)) * W, y = (v) => H - 4 - ((Math.max(min, Math.min(max, v)) - min) / (max - min)) * (H - 8);
+  const bands = hist.map((h, i) => (h.in_bed ? '' : `<rect x="${x(Math.max(0, i - 0.5))}" y="0" width="${W / (n - 1) + 1.5}" shape-rendering="crispEdges" height="${H}" fill="${ZCOL[h.zone] || ZCOL.room}"/>`)).join('');
+  const pts = hist.map((h, i) => (h[key] == null ? null : `${x(i).toFixed(1)},${y(h[key]).toFixed(1)}`)).filter(Boolean).join(' ');
+  const refLine = ref == null ? '' : `<line x1="0" x2="${W}" y1="${y(ref)}" y2="${y(ref)}" stroke="var(--nw-faint)" stroke-dasharray="4 4"/><text x="${W - 4}" y="${y(ref) - 4}" fill="var(--nw-faint)" font-size="10" text-anchor="end">${esc(refLabel)}</text>`;
+  const lastV = [...hist].reverse().find((h) => h[key] != null);
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(key)} over the last ${n * 5} seconds, now ${lastV ? fmt(lastV[key]) : 'unknown'}">${bands}${refLine}
+    ${pts ? `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` : ''}</svg>`;
+}
+function drawerHTML(d) {
+  const now = d.now || {}, hist = d.history || [];
+  const where = now.in_bed ? 'In bed' : (ZONE[now.zone] || now.zone);
+  const outZones = [...new Set(hist.filter((h) => !h.in_bed).map((h) => h.zone))];
+  return `<div class="dr-head"><div><h2 id="dr-title">${esc(d.id)}</h2><div class="sub">Room ${esc(d.room)} · wander risk ${Math.round(d.risk * 100)}% · resting HR ${esc(d.hr_rest)}</div></div>
+      <button class="nw-x" data-close aria-label="Close resident details">✕</button></div>
+    <div class="dr-now">
+      <div><div class="k">Now</div><div class="v">${esc(where)}</div></div>
+      <div><div class="k">Up for</div><div class="v">${now.minutes_up == null ? '–' : `${esc(now.minutes_up)} min`}</div></div>
+      <div><div class="k">Heart rate</div><div class="v">${now.hr ? `${Math.round(now.hr)} bpm` : '–'}</div></div>
+      <div><div class="k">Unusual for now</div><div class="v" style="color:${heat(now.unusual || 0)}">${Math.round((now.unusual || 0) * 100)}%</div></div>
+    </div>
+    ${d.suggestions && d.suggestions.length ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(d.suggestions[0])}</div>${d.suggestions.slice(1).map((m) => `<div class="nw-tip-more">${esc(m)}</div>`).join('')}</div></div>` : ''}
+    <div class="dr-sec">Last 30 minutes</div>
+    <div class="spark"><div class="h"><span>Unusual for right now</span><b>${Math.round((now.unusual || 0) * 100)}%</b></div>
+      ${spark(hist, 'unusual', { min: 0, max: 1, ref: 0.9, refLabel: 'alert line 90%', color: 'var(--nw-l1)', fmt: (v) => `${Math.round(v * 100)}%` })}
+      <div class="ax"><span>${esc(hist[0]?.t || '')}</span><span>${esc(hist[hist.length - 1]?.t || '')}</span></div></div>
+    <div class="spark"><div class="h"><span>Heart rate</span><b>${now.hr ? `${Math.round(now.hr)} bpm` : 'no wearable reading'}</b></div>
+      ${spark(hist, 'hr', { min: Math.min(50, d.hr_rest - 10), max: 130, ref: d.hr_rest, refLabel: `resting ${d.hr_rest}`, color: 'var(--nw-l3)', fmt: (v) => `${Math.round(v)} bpm` })}
+      <div class="ax"><span>${esc(hist[0]?.t || '')}</span><span>${esc(hist[hist.length - 1]?.t || '')}</span></div></div>
+    <div class="zlegend">Shaded = out of bed:${['room', 'corridor', 'common', 'exit', 'outside'].map((z) => `<span><i style="background:${ZCOL[z]}"></i>${ZONE[z] === 'In room' ? 'Up in room' : ZONE[z]}</span>`).join('')}</div>
+    ${outZones.length ? `<p style="font-size:13px;color:var(--nw-ink-2);margin:8px 0 0">Out of bed in the last 30 min: ${outZones.map((z) => esc(ZONE[z] || z)).join(', ')}.</p>` : ''}
+    <div class="dr-sec">Profile</div>
+    <p style="margin:0 0 6px"><b>Looks like:</b> ${esc(d.description)}</p>
+    <p style="margin:0;color:var(--nw-ink-2);font-size:14px">${esc(d.pattern)}</p>
+    <div class="dr-sec">Tonight's alerts (${(d.alerts || []).length})</div>
+    ${(d.alerts || []).length ? d.alerts.slice().reverse().map((a) => `<div class="dr-alert nw-l${a.max_level || a.level}">
+        ${badge(a.max_level || a.level)}<div class="t">${esc(a.title)}</div>
+        <div class="o">${a.resolved ? `Closed · ${esc(a.resolved)}` : a.acked_by ? `${esc(a.acked_by)} responding` : 'Open'}${a.record ? ` · record ${a.record.status === 'filed' ? 'filed' : 'draft'}` : ''}</div></div>`).join('')
+      : '<p style="color:var(--nw-muted);margin:0">None tonight.</p>'}`;
+}
+async function loadDrawer() {
+  if (!drawerId) return;
+  try {
+    const d = await (await fetch(`/api/resident?id=${encodeURIComponent(drawerId)}`)).json();
+    if (d.error) { $('dr-body').innerHTML = `<div class="dr-head"><h2 id="dr-title">${esc(drawerId)}</h2><button class="nw-x" data-close aria-label="Close">✕</button></div><p class="nw-err">${esc(d.error)}</p>`; return; }
+    const sc = $('drawer').scrollTop, hadFocus = $('drawer').contains(document.activeElement) && document.activeElement.matches('[data-close]');
+    $('dr-body').innerHTML = drawerHTML(d);
+    $('drawer').scrollTop = sc;
+    if (hadFocus) $('drawer').querySelector('[data-close]').focus();
+  } catch {}
+}
+function openDrawer(id) {
+  drawerReturn = document.activeElement;
+  drawerId = id; $('scrim').hidden = false; $('drawer').hidden = false;
+  $('dr-body').innerHTML = `<div class="dr-head"><h2 id="dr-title">${esc(id)}</h2><button class="nw-x" data-close aria-label="Close resident details">✕</button></div><p style="color:var(--nw-muted)">Loading…</p>`;
+  $('drawer').querySelector('[data-close]').focus();
+  loadDrawer().then(() => $('drawer').querySelector('[data-close]')?.focus());
+  clearInterval(drawerTimer); drawerTimer = setInterval(loadDrawer, 2000);
+}
+function closeOverlays() {
+  const wasOpen = !$('drawer').hidden || !$('help').hidden;
+  clearInterval(drawerTimer); drawerId = null;
+  $('drawer').hidden = true; $('help').hidden = true; $('scrim').hidden = true;
+  if (wasOpen && drawerReturn && document.contains(drawerReturn)) drawerReturn.focus();
+}
+function openHelp() { drawerReturn = document.activeElement; $('help').hidden = false; $('help').querySelector('[data-close]').focus(); }
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === $('scrim') || e.target === $('help')) { closeOverlays(); return; }
+  const o = e.target.closest('[data-open-res]'); if (o) { openDrawer(o.dataset.openRes); return; }
+  const dot = e.target.closest('#map .res'); if (dot) openDrawer(dot.id.replace(/^res-/, ''));
+});
+$('help-btn').onclick = openHelp;
+$('logq').addEventListener('input', () => last && renderLog(last));
+
+/* ------------------------------------------------------------------ keyboard */
+document.addEventListener('keydown', async (e) => {
+  const overlay = !$('drawer').hidden ? $('drawer') : !$('help').hidden ? $('help') : null;
+  if (e.key === 'Escape') { if (overlay) { e.preventDefault(); closeOverlays(); } else if (document.activeElement === $('logq')) $('logq').blur(); return; }
+  if (overlay) { trapFocus(overlay, e); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('#map .res')) { e.preventDefault(); openDrawer(e.target.closest('.res').id.replace(/^res-/, '')); return; }
+  if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const top = last && last.alerts[0];
+  const k = e.key.toLowerCase();
+  if (e.key === '?') { e.preventDefault(); openHelp(); }
+  else if (e.key === '/') { e.preventDefault(); $('logq').focus(); $('logq').scrollIntoView({ block: 'center' }); }
+  else if (k === 'm') toggleSound();
+  else if (k === 'a' && top && !top.acked_by) { await post('/api/ack', { alert: top.id, by: 'Nurse station' }); tick(); }
+  else if (k === 'f' && top) { await post('/api/resolve', { alert: top.id, outcome: 'Found safe, returned to room' }); tick(); }
+  else if (k === 'r' && top && top.resident) openDrawer(top.resident);
+});
+
 setInterval(tick, 700); tick();
 </script>
 </body>
