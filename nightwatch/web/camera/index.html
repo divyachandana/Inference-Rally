@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NightWatch Camera</title>
+<link rel="stylesheet" href="/assets/theme.css">
 <style>
+  /* Local names mapped onto the shared NightWatch theme (assets/theme.css). */
   :root {
-    --bg: #0a0e14; --panel: #121821; --panel-2: #0e131b; --ink: #e8eef5; --muted: #8c99a8; --line: #243041;
-    --room: #2dd4bf; --hall: #f5a524; --alert: #ff5c5c; --ok: #4ade80; --accent: #6aa8ff;
-    --radius: 14px; --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --bg: var(--nw-bg); --panel: var(--nw-surface); --panel-2: var(--nw-bg-2); --ink: var(--nw-ink); --muted: var(--nw-muted);
+    --line: var(--nw-line); --room: #2dd4bf; --hall: var(--nw-l2); --alert: var(--nw-l3); --ok: var(--nw-ok);
+    --accent: var(--nw-accent); --radius: var(--nw-radius); --font: var(--nw-font);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: radial-gradient(1200px 600px at 10% -10%, #142034 0%, var(--bg) 55%) fixed; color: var(--ink); font: 14px/1.45 var(--font); }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
-  .brand { font-weight: 750; font-size: 18px; letter-spacing: .01em; }
-  .brand span { color: var(--muted); font-weight: 500; margin-left: 8px; font-size: 14px; }
-  .clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; }
-  .mode { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; letter-spacing: .04em; }
-  .mode.night { background: #1b2a4a; color: #b7cdff; } .mode.day { background: #3a3215; color: #f7d774; }
+  .nw-topbar { justify-content: space-between; }
+  .live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .live .t { font: 750 26px/1 var(--nw-font-display); font-variant-numeric: tabular-nums; }
+  .nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .nav .nw-btn { min-height: 36px; font-size: 13.5px; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; padding: 18px 22px; max-width: 1280px; margin: 0 auto; }
   @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
   .stage { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
@@ -28,7 +28,7 @@
   .banner.in { background: var(--ok); color: #05210f; box-shadow: 0 10px 30px rgba(74,222,128,.35); }
   .hint { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px; background: linear-gradient(transparent, rgba(0,0,0,.75)); font-size: 13px; color: #dfe7f1; }
   .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .card { background: linear-gradient(180deg, var(--nw-surface-2), var(--nw-surface)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--nw-shadow); }
   .card h2 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .status { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px rgba(140,153,168,.15); flex: none; }
@@ -54,11 +54,15 @@
   @media (prefers-reduced-motion: reduce) { .banner { transition: none; } }
 </style>
 </head>
-<body>
-<header>
-  <div class="brand">NightWatch <span>Hallway camera</span></div>
-  <span class="mode" id="mode">–</span>
-  <div class="clock" id="clock">--:--</div>
+<body class="nw">
+<header class="nw-topbar">
+  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">Hallway camera</div><div class="nw-brand-sub">On-device person detection · nothing recorded</div></div></div>
+  <div class="live"><span class="nw-mode" id="mode">–</span><span class="t" id="clock">--:--</span></div>
+  <nav class="nav" aria-label="Other screens">
+    <a class="nw-btn nw-btn--ghost" href="/dashboard/" target="_blank" rel="noopener">Nurse station</a>
+    <a class="nw-btn nw-btn--ghost" href="/staff/" target="_blank" rel="noopener">Staff phone</a>
+    <a class="nw-btn nw-btn--ghost" href="/sim/" target="_blank" rel="noopener">Presenter</a>
+  </nav>
 </header>
 <main>
   <section>
@@ -86,10 +90,10 @@
       <h2>Setup</h2>
       <select id="cam" aria-label="Which camera this is"></select>
       <div class="row" style="margin-top:10px">
-        <button class="primary" id="start">Start camera</button>
-        <button id="draw">Draw doorway</button>
-        <button id="flip" title="Swap which side of the line is the room">Flip room side</button>
-        <button class="warn" id="clear">Clear line</button>
+        <button class="nw-btn nw-btn--primary" id="start">Start camera</button>
+        <button class="nw-btn" id="draw">Draw doorway</button>
+        <button class="nw-btn" id="flip" title="Swap which side of the line is the room">Flip room side</button>
+        <button class="nw-btn" id="clear">Clear line</button>
       </div>
       <label class="toggle" style="margin-top:12px"><input type="checkbox" id="privacy" checked> Privacy view (blurred)</label>
       <label class="toggle"><input type="checkbox" id="zoom" checked> Zoom on the doorway (sharper detection once the line is drawn)</label>
@@ -106,6 +110,7 @@
   </aside>
 </main>
 <video id="video" playsinline muted></video>
+<script src="/assets/nw.js"></script>
 <canvas id="grab" width="320" height="320"></canvas>
 <canvas id="full" width="960" height="960" style="display:none"></canvas>
 <script>
@@ -296,14 +301,15 @@ async function poll() {
   try {
     const s = await (await fetch('/api/state')).json();
     $('clock').textContent = s.clock.slice(0, 5);
-    $('mode').textContent = s.night ? 'NIGHT' : 'DAY';
-    $('mode').className = 'mode ' + (s.night ? 'night' : 'day');
+    $('mode').innerHTML = window.NW ? NW.icon(s.night ? 'moon' : 'sun') + (s.night ? ' Night' : ' Day') : (s.night ? 'Night' : 'Day');
+    $('mode').className = 'nw-mode ' + (s.night ? 'is-night' : 'is-day');
     if (!$('cam').options.length) {
       $('cam').innerHTML = (s.cameras || []).map((c) => `<option value="${c.id}">${c.label.replace(/</g, '&lt;')}</option>`).join('');
       door = load(); if (door) pushDoor();
     }
   } catch {}
 }
+if (window.NW) $('logo').innerHTML = NW.icon('camera');
 setInterval(poll, 1000); poll(); render();
 </script>
 </body>
