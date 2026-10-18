@@ -58,6 +58,8 @@
   .stage.drawing canvas#view { cursor: crosshair; }
   .stage.has-tracks canvas#view { cursor: pointer; }
   .stage.drawing.has-tracks canvas#view { cursor: crosshair; }
+  .file-badge { position: absolute; left: 12px; top: 12px; z-index: 3; padding: 4px 10px; border-radius: 999px;
+    font: 700 12px/1.4 var(--nw-font, system-ui); letter-spacing: .04em; background: var(--nw-l1, #f6c344); color: #1a1200; }
   .banner { position: absolute; left: 50%; top: 58px; transform: translateX(-50%) translateY(-12px); opacity: 0; transition: .25s;
             padding: 10px 18px; border-radius: 999px; font-weight: 750; font-size: 16px; background: var(--alert); color: #fff;
             box-shadow: 0 10px 30px rgba(255,92,92,.4); max-width: calc(100% - 24px); text-align: center; z-index: 4;
@@ -281,6 +283,7 @@
       <div class="state k-off" id="state" role="status" aria-live="polite"><span class="ico"></span><span id="state-t">Not started</span></div>
       <div class="aimbadge" id="aimbadge" hidden><span class="ico-eye"></span>Blur off while aiming</div>
       <div class="banner" id="banner" role="status" aria-live="assertive"></div>
+      <div class="file-badge" id="file-badge" hidden>RECORDED VIDEO · analysed live on this laptop</div>
       <div class="strip" id="strip" role="alert" hidden></div>
       <div class="drawhint" id="drawhint" hidden aria-hidden="true">
         <svg viewBox="0 0 100 100">
@@ -352,6 +355,8 @@
       </div>
       <div class="row" style="margin-top:12px">
         <button class="nw-btn nw-btn--primary" id="start">Start camera</button>
+        <button class="nw-btn" id="use-file" title="Run the live detector on a recorded video instead of the webcam">Use a video file</button>
+        <input type="file" id="file-input" accept="video/*" hidden aria-label="Choose a recorded video to analyse">
         <button class="nw-btn" id="draw">Draw doorway</button>
         <button class="nw-btn" id="flip" title="Swap which side of the line is the room">Flip room side</button>
         <button class="nw-btn" id="undo" disabled>Undo</button>
@@ -872,7 +877,14 @@ let drag = null, nudgeT = null, nudging = false;
   h.addEventListener('focus', () => h.setAttribute('aria-label', door ? where() + ' Use arrow keys to move it.' : `Doorway end ${name}`));
 });
 
+let fileURL = null;   // a recorded video chosen with "Use a video file": played on loop and analysed live
 async function openStream() {
+  if (fileURL) {
+    const v = $('video');
+    if (v.src !== fileURL) { v.srcObject = null; v.src = fileURL; v.loop = true; v.muted = true; }
+    await v.play(); camErr = null; refreshUI();
+    return true;
+  }
   if (stream) return true;
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('getUserMedia unavailable'), { name: 'Insecure' });
@@ -890,6 +902,7 @@ function closeStream() {
   // Release the webcam completely (its light goes off): an "off" camera isn't even capturing.
   if (stream) stream.getTracks().forEach((t) => t.stop());
   stream = null; $('video').srcObject = null;
+  if (fileURL) $('video').pause();   // a recorded video just pauses while the camera is off
 }
 
 async function applyActive(isActive, reason) {
@@ -924,6 +937,21 @@ async function startCamera() {
   } catch (e) { $('status').textContent = 'Camera unavailable: ' + e.message; camErr = e; refreshUI(); return false; }
 }
 $('start').onclick = startCamera;
+
+// Recorded footage instead of the webcam: the same detector, tracker and doorway logic run on it live.
+$('use-file').onclick = () => $('file-input').click();
+$('file-input').onchange = async () => {
+  const f = $('file-input').files[0];
+  if (!f) return;
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  if (fileURL) URL.revokeObjectURL(fileURL);
+  fileURL = URL.createObjectURL(f);
+  $('file-badge').hidden = false;
+  $('video').srcObject = null; $('video').removeAttribute('src');
+  $('use-file').textContent = 'Change video';
+  if (running) { await openStream(); return; }
+  await startCamera();
+};
 
 async function poll() {
   try {
