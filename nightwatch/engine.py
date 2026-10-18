@@ -214,14 +214,23 @@ class Engine:
         a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
         a.went_outside = True
 
-    def camera(self, cam_id: str, persons: int, ms: float) -> dict[str, object]:
-        """One analysed frame. Only the person count arrives here; the frame itself is already gone."""
+    def camera(self, cam_id: str, persons: int, ms: float,
+               crossings: list[dict[str, object]] | None = None, doorway: bool = False) -> dict[str, object]:
+        """One analysed frame: a person count and doorway crossings. The frame itself is already gone.
+
+        With a doorway line drawn, only crossings count (precise: walking along the hallway or a
+        staff member passing by doesn't fire). Without one, a person confirmed in view counts.
+        """
         with self.lock:
             cam = self.cameras.get(cam_id)
             if cam is None:
                 return {"error": f"unknown camera {cam_id!r}"}
             self.camera_latencies.append(ms)
             cam["persons"], cam["last_frame"] = persons, time.time()
+            if doorway:
+                for c in crossings or []:
+                    self._crossing(cam, str(c["direction"]))
+                return {"ok": True}
             cam["streak"] = cam["streak"] + 1 if persons else 0
             if cam["streak"] != CAMERA_CONFIRM_FRAMES:   # act once, when a person is confirmed
                 return {"ok": True}
@@ -240,6 +249,31 @@ class Engine:
                 self.log("camera", f"{cam['label']}: person leaving room {r.room}")
                 self.sensor({"type": "location", "resident": r.id, "zone": cam["zone"]})
             return {"ok": True}
+
+    def _crossing(self, cam: dict[str, object], direction: str) -> None:
+        r = self.residents.get(str(cam.get("resident") or ""))
+        where = str(cam["label"]).replace(" camera", "").lower()
+        if not self.is_night():
+            self.log("camera", f"{cam['label']}: someone crossed the doorway {direction} (day: logged only)")
+            return
+        if cam["zone"] == "exit":
+            if direction == "out":
+                ex = self.exits.get(str(cam.get("exit") or ""))
+                near = r or next((x for x in sorted(self.residents.values(), key=lambda x: -x.wander_risk)
+                                  if not x.in_bed), None)
+                self._raise(2, f"Camera: someone went out through the {where} at {self.clock():%H:%M}", near, ex)
+            return
+        if r is None:
+            return
+        if direction == "out" and r.zone == "room":
+            self.log("camera", f"{cam['label']}: crossed the doorway out of room {r.room}")
+            self.sensor({"type": "location", "resident": r.id, "zone": str(cam["zone"])})
+        elif direction == "in" and r.zone != "room":
+            self.log("camera", f"{cam['label']}: crossed back into room {r.room}")
+            r.zone = "room"
+            a = self._open_alert_for(r, None)
+            if a and a.level == 1 and not a.exit:
+                self._close(a, "Went back into their room (camera)", by_staff=False)
 
     # ------------------------------------------------------------------ alerts
 
@@ -404,7 +438,8 @@ class Engine:
                            "p95_ms": round(lat[int(len(lat) * 0.95)], 3) if lat else None},
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
-                             "live": time.time() - c["last_frame"] < 3} for c in self.cameras.values()],
+                             "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway")}
+                            for c in self.cameras.values()],
                 "camera_p50_ms": round(sorted(self.camera_latencies)[len(self.camera_latencies) // 2], 1)
                                  if self.camera_latencies else None,
                 "residents": [

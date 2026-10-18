@@ -15,6 +15,7 @@ API (JSON):
     POST /api/resolve   {"alert": 3, "outcome": "Found safe, walked back"}
     POST /api/clock     {"time": "02:08", "speed": 1}
     POST /api/frame     {"camera": "hall12", "jpeg": "<base64>"}   (analysed in memory, never stored)
+    POST /api/camera/config {"camera": "hall12", "line": [x1, y1, x2, y2] | null, "inside": 1 | -1}
     POST /api/scenario  {"name": "night_elopement" | "night_bathroom" | "day_visits" | "reset"}
 """
 from __future__ import annotations
@@ -32,9 +33,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from engine import Engine  # noqa: E402
 from scorer import build  # noqa: E402
+from vision.tracker import Tracker  # noqa: E402
 
 ENGINE: Engine
 DETECTOR: object | None = None
+TRACKERS: dict[str, Tracker] = {}
+TRACK_LOCK = threading.Lock()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -72,6 +76,8 @@ class Handler(SimpleHTTPRequestHandler):
                 out = {"ok": True}
             elif self.path == "/api/frame":
                 out = _frame(body)
+            elif self.path == "/api/camera/config":
+                out = _camera_config(body)
             elif self.path == "/api/scenario":
                 out = ENGINE.run_scenario(str(body.get("name")))
             else:
@@ -90,15 +96,40 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+def _tracker(cam: str) -> Tracker:
+    if cam not in TRACKERS:
+        TRACKERS[cam] = Tracker()
+    return TRACKERS[cam]
+
+
 def _frame(body: dict[str, object]) -> dict[str, object]:
     """Analyse one camera frame in memory. It is never written to disk or sent anywhere."""
     if DETECTOR is None:
         return {"error": "no camera model loaded: start the server with --camera-model"}
+    cam = str(body.get("camera", "hall12"))
     jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
     boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
     del jpeg
-    ENGINE.camera(str(body.get("camera", "hall12")), len(boxes), ms)
-    return {"boxes": boxes, "ms": round(ms, 1), "model": DETECTOR.name, "device": DETECTOR.device}  # type: ignore[attr-defined]
+    with TRACK_LOCK:
+        tracker = _tracker(cam)
+        crossings = tracker.update(boxes)
+        tracks, people, has_door = tracker.view(), tracker.people, tracker.doorway is not None
+    ENGINE.camera(cam, people, ms, crossings, has_door)
+    return {"tracks": tracks, "crossings": crossings, "people": people, "ms": round(ms, 1),
+            "model": DETECTOR.name, "device": DETECTOR.device}  # type: ignore[attr-defined]
+
+
+def _camera_config(body: dict[str, object]) -> dict[str, object]:
+    """Set (or clear, with line=null) the doorway line for one camera."""
+    cam = str(body.get("camera", "hall12"))
+    line = body.get("line")
+    inside = int(body.get("inside", 1))  # type: ignore[arg-type]
+    with TRACK_LOCK:
+        _tracker(cam).set_doorway(list(line) if line else None, inside)  # type: ignore[arg-type]
+    with ENGINE.lock:
+        if cam in ENGINE.cameras:
+            ENGINE.cameras[cam]["doorway"] = {"line": line, "inside": inside} if line else None
+    return {"ok": True}
 
 
 def main() -> None:
@@ -125,8 +156,10 @@ def main() -> None:
     if args.camera_model:
         from vision.detector import PersonDetector
 
+        # Low threshold here on purpose: the tracker needs 0.5 to start following someone but
+        # keeps following down to 0.3, so a half-hidden person isn't dropped.
         DETECTOR = PersonDetector(args.camera_model, args.camera_model.parent / "person_ssdlite_anchors.pt",
-                                  args.camera_device)
+                                  args.camera_device, threshold=0.3)
         print(f"Camera model: {DETECTOR.name} on {DETECTOR.device}")
     threading.Thread(target=loop, daemon=True, name="tick").start()
     host = "0.0.0.0" if args.lan else "127.0.0.1"

@@ -97,7 +97,14 @@ The strongest signal that someone left their room at night is *seeing* it. `/cam
 browser and sends frames to the local server, where a person detector (torchvision SSDlite320-MobileNetV3,
 COCO weights) runs through **ExecuTorch**: about 6 ms per frame on a MacBook CPU with XNNPACK, NPU via QNN.
 Frames are analysed in memory and dropped; nothing is recorded or sent anywhere, and the page shows a blurred
-view by default. Three frames in a row with a person confirms it. At night, the hallway camera outside room 12
+view by default.
+
+**Precision:** a tracker (`nightwatch/vision/tracker.py`) gives each person a stable id across frames, smooths
+their box, needs 0.5 confidence to start following someone but keeps them down to 0.3 (half-hidden people aren't
+dropped), and the whole frame is letterboxed in (nothing cut off at the edges). On the camera page you click two
+points to **draw the doorway line** and flip which side is the room; then only someone's *feet crossing the line
+going out* counts, so a person walking along the hallway or staff passing by don't fire. Crossing back in closes
+the heads-up. With no line drawn, three frames in a row with a person counts. At night, the hallway camera outside room 12
 means R-07 left their room (heads-up); the front-entrance camera means someone is at the exit (urgent).
 
 ```bash

@@ -90,3 +90,17 @@ def test_camera_at_entrance_is_urgent(night: Engine) -> None:
     for _ in range(3):
         night.camera("front", 1, 5.0)
     assert open_alerts(night)[0][0] == 2
+
+
+def test_doorway_crossing_out_flags_and_back_in_clears(night: Engine) -> None:
+    night.camera("hall12", 1, 5.0, [{"track": 1, "direction": "out"}], doorway=True)
+    assert open_alerts(night) == [(1, "R-07")]
+    night.camera("hall12", 1, 5.0, [{"track": 1, "direction": "in"}], doorway=True)
+    assert open_alerts(night) == []
+    assert night.alerts[0].resolved == "Went back into their room (camera)"
+
+
+def test_with_a_doorway_presence_alone_does_not_fire(night: Engine) -> None:
+    for _ in range(5):
+        night.camera("hall12", 1, 5.0, [], doorway=True)
+    assert open_alerts(night) == []
