@@ -54,6 +54,9 @@ comes from *simulated* days. In a facility it would be learned from each residen
 
 ## Run it
 
+**Demo in one command** (starts the server with the best available models, NPU if built, and opens the screens):
+`powershell -ExecutionPolicy Bypass -File demo.ps1` on the Snapdragon laptop, or `./demo.sh` on macOS/Linux.
+
 Fastest path on any machine: install, then let the health check tell you what works and print the start command.
 
 ```bash
