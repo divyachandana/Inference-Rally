@@ -127,6 +127,7 @@
   .cam-card .ch b { font-weight: 650; color: var(--nw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cam-card .st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; letter-spacing: .06em; color: var(--nw-faint); flex: none; }
   .cam-card svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .cam-card .nw-camctl { margin-top: 8px; } .cam-card.is-off, .cam-card.is-paused { border-style: dashed; }
   .cam-card.is-sim { border-color: var(--nw-l1); border-style: dashed; }
   .sim-tag { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 8px; border-radius: 7px; font-size: 11px; font-weight: 800;
              letter-spacing: .06em; color: #1a1200; background: var(--nw-l1); }
@@ -214,7 +215,7 @@
 </main>
 <script src="/assets/nw.js"></script>
 <script>
-const { offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
+const { camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
 $('report-link').insertAdjacentHTML('afterbegin', icon('report'));
@@ -451,9 +452,10 @@ function renderHeader(s) {
   }
   const ms = s.scorer.p50_ms;
   $('c-model').innerHTML = `${icon('chip')}<b>${esc(s.scorer.name)}</b> on <b>${esc(s.scorer.device)}</b> · <b>${ms == null ? '–' : ms.toFixed(2) + ' ms'}</b> per check`;
-  const live = (s.cameras || []).filter((c) => c.live);
-  $('c-cam').innerHTML = `<span class="nw-dot ${live.some((c) => c.persons) ? 'is-hit' : live.length ? 'is-live' : ''}"></span>Camera <b>${live.length
-    ? `${live.map((c) => (c.persons ? 'person seen' : 'clear')).join(', ')}${s.camera_p50_ms != null ? ` · ${s.camera_p50_ms} ms/frame` : ''}` : 'off'}</b>`;
+  const cams = s.cameras || [], nOn = cams.filter((c) => c.enabled !== false && c.active !== false).length, live = cams.filter((c) => c.live && c.active !== false);
+  const seen = live.some((c) => (c.tracks || []).length || c.persons);
+  $('c-cam').innerHTML = `<span class="nw-dot ${seen ? 'is-hit' : live.length ? 'is-live' : ''}"></span>Cameras <b>${nOn} on · ${cams.filter((c) => c.enabled === false).length} off${cams.some((c) => c.enabled !== false && c.active === false) ? ` · ${cams.filter((c) => c.enabled !== false && c.active === false).length} paused` : ''}</b>${live.length
+    ? ` · <b>${seen ? 'person seen' : 'clear'}${s.camera_p50_ms != null ? ` · ${esc(s.camera_p50_ms)} ms/frame` : ''}</b>` : ''}`;
   $('c-net').innerHTML = `${icon('wifiOff')}Internet needed <b>No</b>`;
   $('c-staff').innerHTML = `${icon('user')}Night staff on duty <b>${esc(s.night_staff)}</b>`;
   $('c-temp').innerHTML = `${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b>`;
@@ -530,30 +532,48 @@ function radarSVG(c) {
       <circle cx="${fx}" cy="${fy}" r="3.2" fill="${col}" stroke="#070b14" stroke-width="1"/>
       <text x="${fx}" y="${Math.max(7, t.y1 * 100 - 2)}" fill="${col}" font-size="5.5" font-weight="800" text-anchor="middle">#${esc(t.id)} · ${word}</text></g>`;
   }).join('');
-  const off = !c.live ? `<g transform="translate(38 30) scale(1)" fill="none" stroke="var(--nw-faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g transform="scale(1)">${paths.camera}</g></g>
-      <text x="50" y="68" fill="var(--nw-muted)" font-size="7.5" font-weight="700" text-anchor="middle">Camera off</text>
-      <text x="50" y="78" fill="var(--nw-faint)" font-size="5.5" text-anchor="middle">start it on /camera/</text>` : '';
-  return `<svg viewBox="0 0 100 100" role="img" aria-label="${esc(c.label)}: ${c.live ? `${(c.tracks || []).length} people tracked` : 'camera off'}">
+  const st = camState(c), watching = st.key === 'on' || st.key === 'hit';
+  const glyph = st.key === 'paused' ? 'moon' : st.key === 'off' ? 'wifiOff' : 'camera';
+  const sub = st.key === 'off' ? ['Turned off by staff', 'nothing is analysed'] : st.key === 'paused' ? ['Watches 21:00-05:00', 'nothing analysed now'] : ['On, no frames yet', 'start it on /camera/'];
+  const off = !watching ? `<rect width="100" height="100" fill="#070b14" fill-opacity="${st.key === 'idle' ? 0 : .55}"/>
+      <g transform="translate(38 24)" fill="none" stroke="${st.key === 'off' ? 'var(--nw-ink-2)' : st.key === 'paused' ? 'var(--nw-moon)' : 'var(--nw-faint)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[glyph]}</g>
+      <text x="50" y="62" fill="var(--nw-ink)" font-size="7.5" font-weight="750" text-anchor="middle">${esc(st.long)}</text>
+      <text x="50" y="72" fill="var(--nw-muted)" font-size="5.3" text-anchor="middle">${esc(sub[0])}</text>
+      <text x="50" y="79" fill="var(--nw-muted)" font-size="5.3" text-anchor="middle">${esc(sub[1])}</text>` : '';
+  return `<svg viewBox="0 0 100 100" role="img" aria-label="${esc(c.label)}: ${watching ? `${(c.tracks || []).length} people tracked` : esc(st.long)}">
     <defs><clipPath id="clip-${esc(c.id)}"><rect width="100" height="100" rx="6"/></clipPath>
       <pattern id="grid-${esc(c.id)}" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#16223d" stroke-width=".5"/></pattern></defs>
     <g clip-path="url(#clip-${esc(c.id)})"><rect width="100" height="100" fill="#09101e"/><rect width="100" height="100" fill="url(#grid-${esc(c.id)})"/>
-    ${c.live || d ? door : ''}${c.live ? tracks : ''}${off}</g>
+    ${d ? door : ''}${watching ? tracks : ''}${off}</g>
     <rect x=".5" y=".5" width="99" height="99" rx="6" fill="none" stroke="var(--nw-line-strong)"/></svg>`;
 }
+let radarIds = '';
 function renderRadar(s) {
   const cams = s.cameras || [];
-  $('radar-ms').innerHTML = cams.some((c) => c.live) && s.camera_p50_ms != null ? `${icon('chip')}<b>${esc(s.camera_p50_ms)} ms</b>/frame` : `${icon('camera')}Camera off`;
-  $('radar').innerHTML = cams.length ? cams.map((c) => {
-    const n = (c.tracks || []).length;
-    const st = !c.live ? '<span class="st"><span class="nw-dot"></span>OFF</span>'
-      : `<span class="st" style="color:${n ? 'var(--nw-hall)' : 'var(--nw-ok)'}"><span class="nw-dot ${n ? 'is-hit' : 'is-live'}"></span>${n ? `${n} ${n > 1 ? 'PEOPLE' : 'PERSON'}` : 'CLEAR'}</span>`;
-    return `<div class="cam-card${c.simulated ? ' is-sim' : ''}"><div class="ch"><b title="${esc(c.label)}">${esc(c.label.replace(/ camera$/i, ''))}</b>${st}</div>${radarSVG(c)}
-      ${c.simulated ? `<div class="sim-tag" role="note">${icon('play')}SIMULATED · demo data, not a real camera</div>` : ''}</div>`;
-  }).join('') : `<div class="nw-empty">${icon('camera')}<div><b>No cameras configured</b>Door contacts and wearables still work.</div></div>`;
+  const watching = cams.filter((c) => { const k = camState(c).key; return k === 'on' || k === 'hit'; });
+  $('radar-ms').innerHTML = watching.length && s.camera_p50_ms != null ? `${icon('chip')}<b>${esc(s.camera_p50_ms)} ms</b>/frame` : `${icon('camera')}No camera watching`;
+  const box = $('radar');
+  if (!cams.length) { box.innerHTML = `<div class="nw-empty">${icon('camera')}<div><b>No cameras configured</b>Door contacts and wearables still work.</div></div>`; radarIds = ''; return; }
+  const ids = cams.map((c) => c.id).join(',');
+  if (ids !== radarIds) {   // build cards once so the switches keep focus between polls
+    radarIds = ids;
+    box.innerHTML = cams.map((c) => `<div class="cam-card" data-cam="${esc(c.id)}"><div class="ch"><b title="${esc(c.label)}">${esc(c.label.replace(/ camera$/i, ''))}</b><span class="st-slot"></span></div>
+      <div class="svg-slot"></div><div class="sim-slot"></div>${cameraControls(c)}</div>`).join('');
+  }
+  for (const c of cams) {
+    const card = box.querySelector(`[data-cam="${CSS.escape(c.id)}"]`);
+    const k = camState(c).key;
+    card.className = `cam-card is-${k}${c.simulated ? ' is-sim' : ''}`;
+    card.querySelector('.st-slot').innerHTML = camStateHTML(c);
+    card.querySelector('.svg-slot').innerHTML = radarSVG(c);
+    card.querySelector('.sim-slot').innerHTML = c.simulated ? `<div class="sim-tag" role="note">${icon('play')}SIMULATED · demo data, not a real camera</div>` : '';
+    syncCameraControls(card, c);
+  }
 }
 
 /* ------------------------------------------------------------------ loop */
 document.addEventListener('click', async (e) => {
+  if (handleCameraClick(e, 'nurse station', tick)) return;
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.ack) { b.disabled = true; await post('/api/ack', { alert: +b.dataset.ack, by: 'Nurse station' }); tick(); }
   if (b.dataset.res) { b.disabled = true; await post('/api/resolve', { alert: +b.dataset.res, outcome: 'Found safe, returned to room' }); tick(); }

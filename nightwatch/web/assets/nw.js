@@ -95,5 +95,32 @@
     return el;
   };
 
-  window.NW = { offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
+  // Camera privacy state. Order matters: off beats paused beats not-started.
+  const camState = (c) => {
+    if (c.enabled === false) return { key: 'off', word: 'OFF', long: 'Camera off', sub: 'Turned off by staff · frames dropped, nothing analysed' };
+    if (c.active === false) return { key: 'paused', word: 'PAUSED', long: 'Paused · night only', sub: 'Watches 21:00-05:00 only · nothing analysed now' };
+    if (!c.live) return { key: 'idle', word: 'NOT STARTED', long: 'Not started', sub: 'On, but no frames yet · start it on /camera/' };
+    const n = (c.tracks || []).length || c.persons || 0;
+    return n ? { key: 'hit', word: `${n} ${n > 1 ? 'PEOPLE' : 'PERSON'}`, long: 'Watching', sub: '' } : { key: 'on', word: 'CLEAR', long: 'Watching', sub: '' };
+  };
+  const camStateHTML = (c) => { const st = camState(c); return `<span class="nw-camstate is-${st.key}"><span class="nw-dot ${st.key === 'on' ? 'is-live' : st.key === 'hit' ? 'is-hit' : ''}"></span>${st.word}</span>`; };
+  // On/off switch + Always / Night only. Click handling: NW.handleCameraClick in each page.
+  const cameraControls = (c) => `<div class="nw-camctl" data-camctl="${esc(c.id)}">
+      <button class="nw-switch" role="switch" aria-checked="false" data-cam-enable="${esc(c.id)}" aria-label="${esc(c.label)} on or off"><span class="trk" aria-hidden="true"></span><span class="txt">OFF</span></button>
+      <span class="nw-seg" role="group" aria-label="${esc(c.label)} schedule">
+        <button data-cam-schedule="${esc(c.id)}" data-v="always" aria-pressed="false">Always</button><button data-cam-schedule="${esc(c.id)}" data-v="night" aria-pressed="false">Night only</button></span></div>`;
+  const syncCameraControls = (root, c) => {
+    const el = root.querySelector(`[data-camctl="${CSS.escape(c.id)}"]`); if (!el) return;
+    const on = c.enabled !== false, sw = el.querySelector('[data-cam-enable]');
+    sw.setAttribute('aria-checked', String(on)); sw.querySelector('.txt').textContent = on ? 'ON' : 'OFF'; sw.disabled = false;
+    el.querySelectorAll('[data-cam-schedule]').forEach((b) => { b.setAttribute('aria-pressed', String(b.dataset.v === (c.schedule || 'always'))); b.disabled = !on; });
+  };
+  const handleCameraClick = (e, by, after) => {
+    const sw = e.target.closest('[data-cam-enable]'), sc = e.target.closest('[data-cam-schedule]');
+    if (sw) { sw.disabled = true; post('/api/camera/config', { camera: sw.dataset.camEnable, enabled: sw.getAttribute('aria-checked') !== 'true', by }).then(after); return true; }
+    if (sc) { post('/api/camera/config', { camera: sc.dataset.camSchedule, schedule: sc.dataset.v, by }).then(after); return true; }
+    return false;
+  };
+
+  window.NW = { camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
 })();
