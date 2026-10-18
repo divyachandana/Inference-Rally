@@ -5,13 +5,17 @@
 
 Checks: Python version and CPU architecture, imports (torch, executorch, pillow, optional
 bleak/pyserial), each model file loads in the ExecuTorch runtime and runs once (with timing),
-port 8000 is free, and prints the command to start the server with whatever works.
+port 8000 is free, the web pages and the assets they link exist, logs/ is writable and tonight's
+saved state (logs/night_state.json) is readable, and prints the command to start the server with
+whatever works.
 """
 from __future__ import annotations
 
 import argparse
 import io
+import json
 import platform
+import re
 import socket
 import sys
 import time
@@ -19,6 +23,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ROOT / "models"
+WEB = ROOT / "nightwatch" / "web"
+LOGS = ROOT / "logs"
+PAGES = ("home", "dashboard", "staff", "sim", "camera")          # the demo needs these
+EXTRA_PAGES = ("perf", "report", "settings", "story")           # nice to have
+ASSETS = ("auth.js", "nw.js", "theme.css")
 OK, WARN, FAIL = "  OK  ", " WARN ", " FAIL "
 
 
@@ -55,6 +64,48 @@ def run_model(path: Path, make_input: object) -> float | None:
     except Exception as exc:  # noqa: BLE001
         line(FAIL, path.name, f"{exc!r}")
         return None
+
+
+def check_web() -> None:
+    for name in ASSETS:
+        f = WEB / "assets" / name
+        line(OK if f.exists() else FAIL, f"web/assets/{name}", "" if f.exists() else "missing")
+    for page in PAGES + EXTRA_PAGES:
+        f = WEB / page / "index.html"
+        if not f.exists():
+            line(FAIL if page in PAGES else WARN, f"/{page}/", "page missing")
+            continue
+        html = f.read_text(encoding="utf-8", errors="replace")
+        missing = sorted({ref for ref in re.findall(r'(?:src|href)="(/assets/[^"?#]+)', html)
+                          if not (WEB / ref.lstrip("/")).exists()})
+        line(FAIL if missing else OK, f"/{page}/", f"links missing {', '.join(missing)}" if missing else "")
+
+
+def check_state() -> None:
+    try:
+        LOGS.mkdir(exist_ok=True)
+        probe = LOGS / ".write-test"
+        probe.write_text("ok")
+        probe.unlink()
+        line(OK, "logs/ writable", "night state and nightwatch.log are saved here")
+    except OSError as exc:
+        line(FAIL, "logs/ writable", f"{exc!r}: the server can't save state across a restart")
+    state = LOGS / "night_state.json"
+    if not state.exists():
+        line(OK, "night state", "none saved yet (the server starts a clean night)")
+        return
+    try:
+        data = json.loads(state.read_text())
+        sys.path.insert(0, str(ROOT / "nightwatch"))
+        from engine import Engine
+
+        ok, why = Engine.restorable(data)
+        open_alerts = sum(1 for a in data.get("alerts", []) if not a.get("resolved"))
+        line(OK, "night state", f"{len(data.get('alerts', []))} alerts ({open_alerts} open), "
+             + (f"will be restored on start ({why})" if ok else f"won't be restored: {why}")
+             + "; use --fresh for a clean night")
+    except Exception as exc:  # noqa: BLE001
+        line(WARN, "night state", f"{state.name} unreadable ({exc!r}); the server will start a clean night")
 
 
 def main() -> None:
@@ -104,6 +155,9 @@ def main() -> None:
             line(OK, "camera pipeline (jpeg -> boxes)", f"{len(boxes)} people in a blank frame, {ms:.1f} ms")
         except Exception as exc:  # noqa: BLE001
             line(FAIL, "camera pipeline", f"{exc!r}")
+
+    check_web()
+    check_state()
 
     with socket.socket() as s:
         free = s.connect_ex(("127.0.0.1", 8000)) != 0
