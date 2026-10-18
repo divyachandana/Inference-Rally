@@ -102,8 +102,7 @@ nurse station shows a radar of positions, never video.
 **Families and staff decide when it watches.** Each camera can be set to night only (21:00–05:00) or turned
 off, from the camera page, the nurse station or the presenter page. Off means physically off: frames are
 dropped without being decoded and the webcam is released (its light goes off). Every switch is logged with
-who made it and appears in the morning report. [Team: the server currently starts each camera as "always on";
-switch it to night only before the demo, or change the default, if you want to say "night only by default".]
+who made it and appears in the morning report.
 
 ## What's real vs simulated
 
