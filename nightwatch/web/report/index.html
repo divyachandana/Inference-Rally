@@ -55,6 +55,8 @@
   .tbc { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--nw-l1); }
   .tbc .box { width: 16px; height: 16px; border: 2px solid var(--nw-l1); border-radius: 4px; flex: none; }
   .tbc .line { display: inline-block; min-width: 160px; border-bottom: 1px dashed var(--nw-l1); height: 1em; }
+  .rec dl { grid-template-columns: max-content minmax(0, 1fr); } .rec dd { overflow-wrap: anywhere; min-width: 0; }
+  @media (max-width: 520px) { .tbc .line { min-width: 40px; } .rec dl { gap: 6px 10px; } }
   .rec .by { margin-top: 12px; font-size: 12.5px; color: var(--nw-muted); }
   .foot { color: var(--nw-faint); font-size: 12.5px; text-align: center; }
 
@@ -69,6 +71,8 @@
     .nw-badge, .nw-sev .n, .bar div { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .nw-l3 .nw-badge, .nw-badge.nw-l3 { color: #fff; }
     a { color: inherit; text-decoration: none; }
+    .nw-recform { display: none !important; }
+    .nw-filed, .nw-draftbadge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
 </head>
@@ -85,7 +89,7 @@
 <main id="doc" aria-live="polite"><p style="color:var(--nw-muted)">Loading the shift report…</p></main>
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, LEVELS, SEVERITY, badge, timeline } = NW;
+const { esc, icon, LEVELS, SEVERITY, badge, timeline, recordForm, bindRecordForms, filedBadge, isDirty } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('report');
 $('print').insertAdjacentHTML('afterbegin', icon('print'));
@@ -99,6 +103,7 @@ function tile(k, ic, v, sub, cls = '') {
   return `<div class="tile ${cls}"><div class="k">${icon(ic)}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
 }
 
+let TAX = null;
 function render(r, camEvents) {
   const t = r.totals, rs = r.response_s;
   const maxSev = Math.max(1, ...Object.values(r.severity));
@@ -117,6 +122,7 @@ function render(r, camEvents) {
       ${tile('Went outside', 'door', esc(t.went_outside), 'left the building', t.went_outside ? 'warn' : 'good')}
       ${tile('Settled on their own', 'bed', esc(t.settled_on_their_own), 'no staff needed', 'good')}
       ${tile('Median response', 'clock', rs.median == null ? '–' : `${esc(rs.median)}<small>s</small>`, rs.count ? `slowest ${esc(rs.max)} s · ${esc(rs.count)} acknowledged` : 'nothing acknowledged yet')}
+      ${tile('Care records', 'note', `${esc(t.records_filed ?? 0)}<small>filed</small>`, `${esc(t.records_draft ?? 0)} draft${t.records_draft === 1 ? '' : 's'} still to file`, t.records_draft ? '' : 'good')}
       ${tile('Visits logged', 'user', esc(t.visits_logged), 'daytime door openings')}
     </section>
 
@@ -150,17 +156,19 @@ function render(r, camEvents) {
     </section>
 
     <section class="nw-panel" aria-labelledby="h-rec">
-      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-rec">Draft care records <span class="nw-count">${records.length}</span></h2>
-        <span class="tbc" style="font-size:12.5px"><span class="box"></span>= staff to confirm before filing</span></div>
+      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-rec">Care records <span class="nw-count">${records.length}</span></h2>
+        <span style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center"><span class="nw-filed">${icon('check')}${records.filter((a) => a.record.status === 'filed').length} filed</span>
+        <span class="nw-draftbadge">${icon('note')}${records.filter((a) => a.record.status !== 'filed').length} draft</span>
+        <span class="tbc" style="font-size:12.5px"><span class="box"></span>= staff to confirm before filing</span></span></div>
       ${records.length ? records.map((a) => {
-        const rec = a.record;
-        return `<article class="rec">
-          <div class="h">${sev(rec.severity)}<span class="draft">Draft · not filed</span></div>
+        const rec = a.record, filed = rec.status === 'filed';
+        return `<article class="rec" data-id="${esc(a.id)}">
+          <div class="h">${sev(rec.severity)}${filed ? filedBadge(rec) : '<span class="draft">Draft · not filed</span>'}</div>
           <div class="t">${esc(a.title)}</div>
           <div style="color:var(--nw-muted);font-size:13.5px">${esc(rec.resident || a.resident || '')}${a.resolved ? ` · ${esc(a.resolved)}` : ''}</div>
-          <dl>${FIELDS.filter((k) => rec[k]).map((k) => `<dt>${k.replace(/_/g, ' ')}</dt><dd>${/staff to confirm/i.test(rec[k])
+          <dl>${FIELDS.concat(['nondrug_alt', 'note']).filter((k) => rec[k]).map((k) => `<dt>${k === 'nondrug_alt' ? 'non-drug alternative' : k.replace(/_/g, ' ')}</dt><dd>${/staff to confirm/i.test(rec[k])
             ? `<span class="tbc"><span class="box" aria-hidden="true"></span>Staff to confirm <span class="line" aria-hidden="true"></span></span>` : esc(rec[k])}</dd>`).join('')}</dl>
-          <div class="by">${icon('note')} ${esc(rec.draft_by || '')}</div>
+          ${filed ? '' : `<div class="by">${icon('note')} ${esc(rec.draft_by || '')}</div>${recordForm(a, TAX)}`}
         </article>`;
       }).join('') : '<p style="color:var(--nw-muted);margin:0">Closed alerts appear here as draft entries in the care team\'s record format.</p>'}
     </section>
@@ -176,15 +184,18 @@ async function load() {
   try {
     const [r, st] = await Promise.all([fetch('/api/report').then((x) => x.json()), fetch('/api/state').then((x) => x.json()).catch(() => null)]);
     // /api/report has no events yet: camera on/off/schedule switches come from the live event log.
-    const camEvents = ((st && st.events) || []).filter((e) => e.kind === 'camera' && /turned (ON|OFF) by|night only \(21|always on \(/.test(e.text));
-    render(r, camEvents);
+    const camEvents = ((st && st.events) || []).filter((e) => e.kind === 'camera' && /turned (ON|OFF) by|night only \(|always on \(/.test(e.text));
+    TAX = (st && st.taxonomy) || TAX;
+    const sc = window.scrollY; render(r, camEvents); window.scrollTo(0, sc);
   }
   catch { $('doc').innerHTML = `<div class="nw-empty">${icon('wifiOff')}<div><b>Report not reachable</b>Is the NightWatch server running on this laptop?</div></div>`; }
 }
 $('print').onclick = () => window.print();
 $('refresh').onclick = load;
 load();
-setInterval(() => { if (!document.hidden) load(); }, 5000);
+// Auto-refresh, but never while someone is filling a record form.
+setInterval(() => { if (!document.hidden && !isDirty()) load(); }, 5000);
+bindRecordForms(() => 'Nurse station', () => load());
 </script>
 </body>
 </html>
