@@ -35,9 +35,10 @@ contacts, a heart-rate watch and bed and location sensors feed an escalation lad
    count.
 2. **Urgent**: an exit door or window opens at night, a camera sees someone at the front entrance, or the
    heads-up got no response. Loud alert that must be acknowledged.
-3. **Emergency**: still no acknowledgement, or the resident is confirmed outside. All phones, the on-call
-   supervisor, then emergency services through the facility's own contact chain. The nurse station switches
-   to a full-screen emergency view.
+3. **Emergency**: still no acknowledgement, or the resident is confirmed outside. The nurse station switches
+   to a full-screen emergency view, every staff phone alarms, and the emergency contacts the facility chose
+   (on-call supervisor, family, owner) are notified at the same moment. Emergency services stay in the
+   facility's own chain and are always simulated in this build: NightWatch never calls 911.
 
 It only climbs when nobody responds. During the day, doors and camera sightings are logged, not alarmed.
 When an alert closes, NightWatch gives it the care team's own severity badge (1 routine / 2 notable /
@@ -45,8 +46,29 @@ When an alert closes, NightWatch gives it the care team's own severity badge (1 
 confirm. In the morning, a shift report (`/report/`) gives the handover in one page: totals, response
 times, severity 1/2/3, alerts by resident, a timeline, the draft care records and every camera privacy switch.
 
-Other details built for the night shift: a camera radar at the nurse station (positions only, never video),
-an "Offline · still protecting" badge when Wi-Fi drops, and a presenter page with a step-by-step demo guide.
+**Built for the one person on nights:**
+
+- **Staff phone** (`/staff/`): pairs with the laptop using a 6-digit PIN, so only staff devices can see or
+  answer alerts. Each nurse enters their name; one-tap **I'm going** and **Found safe**, **Need backup** to call
+  the other staff, a 2-tap care record after Found safe, English and Spanish.
+- **Emergency contacts:** at level 3, or when staff press **Call for help**, the on-call supervisor, family
+  and owner are notified at once. Channels: iMessage sent from the laptop's Messages app and free ntfy push
+  (used in the demo); Twilio calls and SMS are supported but not used. Safe by default: a dry run until the
+  nurse station turns real sending on (it resets to off at every start), emergency numbers such as 911 are
+  refused, sends are rate-limited, and each message carries alert facts only (who, where, when, level), never
+  video or health readings.
+- **Nurse station** (`/dashboard/`): floor plan, camera radar (positions only, never video), a resident drawer
+  with 30-minute graphs, care-record filing, a full-screen level-3 takeover, an "Offline · still protecting"
+  badge.
+- **Morning report** (`/report/`): the handover in one page (totals, response times, severity 1/2/3, alerts by
+  resident, timeline, care records filed or draft, every camera privacy switch).
+- **Family view** (`/family/?id=R-07`): a calm "How was their night?" for one resident.
+- **Also on the laptop:** home page with every screen and the pairing PIN, settings with a drag-and-drop
+  floor-plan editor, a corridor wall display (`/wall/`), a guided story mode (`/story/`), a help center and a
+  privacy-notice template for families, display modes (high contrast, larger text, reduced motion), and a
+  performance page (`/perf/`) that runs the NPU-vs-CPU benchmark from a button.
+- **Reliability:** state survives a server restart mid-night; pages update live (server-sent events); a QA
+  gate (`scripts/qa.py`, 134 tests) runs before every freeze.
 
 Our design rule: **fixed rules for what we know is dangerous, ML for what we have to see.** A door opening at
 2 a.m. doesn't need a model; recognising a person in a hallway frame does.
@@ -62,8 +84,8 @@ Two models run on the device through ExecuTorch:
 
 - **Person detector (the heavy, continuous workload).** torchvision SSDlite320-MobileNetV3 with COCO
   weights, exported by `nightwatch/vision/export_detector.py`. The browser page `/camera/` sends webcam
-  frames to the local server, which runs the detector and keeps only positions. About 6 ms per frame on a
-  MacBook CPU with XNNPACK during development. A camera running all night is the main reason for the NPU.
+  frames to the local server, which runs the detector and keeps only positions. About 5.5 ms per frame on a
+  dev MacBook CPU with XNNPACK during development. A camera running all night is the main reason for the NPU.
   - **Precision:** a tracker gives each person a stable id with motion prediction and hysteresis (0.5
     confidence to start following, kept down to 0.3). Staff draw a **doorway line** on the camera page; only
     feet crossing it *going out* counts (held 2 frames), so people walking along the hallway don't fire, and
@@ -79,10 +101,12 @@ Two models run on the device through ExecuTorch:
 - **Backends.** Both export to **XNNPACK** for the CPU and to **Qualcomm QNN** for the **Hexagon NPU** (the
   QNN compile runs on an x86_64 host with the Qualcomm AI Engine Direct SDK). [Team: state whether the QNN
   builds were run on the NPU. As of writing they have not been.]
-- **Runtime.** The dashboard shows which models and devices are live and the measured latency. If a model
+- **Runtime.** The dashboard and `/home/` show which models and devices are live and the measured latency;
+  `/perf/` times both models live and runs the benchmark, labelling each run with the machine it came from. If a model
   fails to load, the server says so and a rule fallback keeps watching.
-- **Why on-device.** Camera frames of people with dementia must not leave the building; facility internet
-  drops at night; and a detector running on every frame all night needs a low-power always-on chip.
+- **Why on-device.** Camera frames and health readings of people with dementia must not leave the building
+  (only a short alert text goes to the contacts the facility chose); facility internet drops at night; and a
+  detector running on every frame all night needs a low-power always-on chip.
 
 **Measured on the Snapdragon X Elite** (see `nightwatch/bench/README.md`):
 
@@ -94,6 +118,8 @@ Two models run on the device through ExecuTorch:
 | Normal-pattern model, energy | [__ mJ] | [__ mJ] |
 
 ## Privacy
+
+A privacy-notice template for families is in `docs/PRIVACY_NOTICE.md`.
 
 Camera frames are analysed in memory and dropped: nothing is recorded, stored or sent anywhere, and only a
 person's position reaches the alert logic. The camera page shows a blurred privacy view by default, and the
@@ -113,7 +139,9 @@ who made it and appears in the morning report.
 | | The presenter scenario "Camera: R-07 walks out" plays **simulated** camera data; it is tagged SIMULATED on screen |
 | The escalation ladder, day/night modes, acknowledgement and resolution | "Normal" for the small model was learned from **simulated days**; in a facility it would come from each resident's own first weeks |
 | Staff phone page and nurse-station dashboard over the local network | Residents are **synthetic** (`nightwatch/demo/facility.json`); every number there is invented |
-| Works with Wi-Fi off | Emergency contact steps: shown and logged as "(simulated)". It never dials anyone, and never auto-dials 911 |
+| Works with Wi-Fi off (alerts, models, staff phones on a local network) | Emergency services: always simulated. NightWatch never calls 911 |
+| Contact fan-out to on-call, family and owner via iMessage and ntfy push, when real sending is switched on | Twilio calls/SMS: supported, not used in the demo. Real sending is off (dry run) by default; [Team: live message tested on the day: yes/no, channel] |
+| Phone pairing PIN, shift report, family view, settings, 134-test QA gate | |
 | Bridges for a real door sensor (Arduino + reed switch) and a Bluetooth heart-rate watch | Other sensor events in the demo come from the browser simulator (`/sim/`). [Team: real sensors used on the day, if any] |
 | Severity badge and draft care record in the care team's format | |
 
@@ -123,19 +151,17 @@ the code, the demo or this submission.
 
 ## Setup
 
-Python 3.10+. The server is standard library only; models need `torch`, `executorch` and `pillow`. The
-detector `.pte` and its anchors are committed, so torchvision is only needed to re-export.
+Python 3.10+. The models (`.pte`) are committed, so no training is needed.
 
 ```bash
 git clone https://github.com/lucasmasen/ExecuTorch && cd ExecuTorch
-pip install -r requirements.txt
-python nightwatch/model/train_anomaly.py
-cd nightwatch/model && python export.py --backend xnnpack && cd ../..
-python nightwatch/server.py --model models/normal_pattern_xnnpack.pte \
-  --camera-model models/person_ssdlite_xnnpack.pte --l1-timeout 20 --ack-timeout 15
+pip install -r requirements.txt     # Windows on ARM: powershell -ExecutionPolicy Bypass -File setup_windows.ps1
+./demo.sh                           # Snapdragon laptop: powershell -ExecutionPolicy Bypass -File demo.ps1
 ```
 
-Open <http://localhost:8000/dashboard/> (nurse station), <http://localhost:8000/staff/> (staff phone),
+The launcher picks the NPU (QNN) models if they're in `models/`, otherwise the CPU (XNNPACK) ones, starts the
+server on the local network and opens the screens. Start at <http://localhost:8000/> (home, with the phone
+PIN). A 2-minute judge tour is in `docs/JUDGES.md`. Open <http://localhost:8000/dashboard/> (nurse station), <http://localhost:8000/staff/> (staff phone),
 <http://localhost:8000/sim/> (presenter page and sensor simulator), <http://localhost:8000/camera/> (hallway
 camera) and <http://localhost:8000/report/> (morning shift report). `python nightwatch/check.py` checks the
 laptop and prints the start command. Add
@@ -186,5 +212,6 @@ Lawsuit claims are allegations; amounts are jury verdicts as reported. Full link
 - Whether the QNN builds were run on the NPU (and when)
 - Whether detection was verified on a real person
 - Real sensors used on the day (if any)
+- Whether a live contact message (iMessage / ntfy) was tested on the day
 - Demo video link, slides link
 - Team names and roles (×4)
