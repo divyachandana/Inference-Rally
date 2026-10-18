@@ -28,6 +28,11 @@
     reset: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     pin: '<path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/>',
     window: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M12 3v18M4 12h16"/>',
+    report: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 10h6M9 14h6M9 18h3"/>',
+    radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 18 6"/>',
+    next: '<path d="m9 6 6 6-6 6"/>',
+    back: '<path d="m15 6-6 6 6 6"/>',
+    print: '<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2"/><rect x="6" y="14" width="12" height="7"/>',
     heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
   };
   const icon = (name, cls = '') =>
@@ -77,5 +82,18 @@
 
   const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-  window.NW = { esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
+  // "Offline · still protecting": shown whenever the browser loses the network. The pages are
+  // served by the laptop itself, so polling keeps working with Wi-Fi off.
+  const offlineBadge = (host) => {
+    const el = document.createElement('span');
+    el.className = 'nw-offline';
+    el.setAttribute('role', 'status');
+    el.innerHTML = `${icon('wifiOff')}Offline · still protecting`;
+    host.appendChild(el);
+    const sync = () => { el.classList.toggle('is-on', !navigator.onLine); document.body.classList.toggle('nw-is-offline', !navigator.onLine); };
+    window.addEventListener('online', sync); window.addEventListener('offline', sync); sync();
+    return el;
+  };
+
+  window.NW = { offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
 })();

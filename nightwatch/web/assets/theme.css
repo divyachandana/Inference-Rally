@@ -31,6 +31,9 @@
   --nw-l1-bg: rgba(246, 195, 68, .10);
   --nw-l2-bg: rgba(255, 143, 63, .12);
   --nw-l3-bg: rgba(255, 82, 99, .16);
+  /* camera radar: which side of the doorway line (matches the camera page) */
+  --nw-room: #2dd4bf;
+  --nw-hall: #f5a524;
   /* care-record severity (1 routine / 2 notable / 3 escalation) */
   --nw-sev1: var(--nw-ok);
   --nw-sev2: var(--nw-l1);
@@ -217,6 +220,15 @@ body.nw {
   font: 700 12px/1 var(--nw-mono); color: var(--nw-ink); background: var(--nw-bg-2);
 }
 .nw-link { color: var(--nw-accent); text-decoration: none; } .nw-link:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- offline proof */
+.nw-offline {
+  display: none; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-radius: var(--nw-radius-pill);
+  font-weight: 800; font-size: 13px; letter-spacing: .04em; color: var(--nw-ok-ink); background: var(--nw-ok);
+  box-shadow: 0 0 0 4px rgba(61, 220, 151, .18);
+}
+.nw-offline.is-on { display: inline-flex; }
+.nw-offline .nw-ico { width: 18px; height: 18px; }
 
 @media (max-width: 480px) { .nw-brand-sub { white-space: normal; } }
 

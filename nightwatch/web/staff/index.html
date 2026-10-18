@@ -48,6 +48,7 @@
   .btns .nw-btn { width: 100%; }
   .btns .nw-btn .nw-ico { width: 24px; height: 24px; }
   details { margin-top: 14px; } summary { cursor: pointer; color: var(--nw-muted); font-size: 14px; padding: 6px 0; }
+  .off-host .nw-offline.is-on { display: flex; justify-content: center; margin-bottom: 12px; font-size: 15px; padding: 11px 14px; }
   .net { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--nw-faint); }
 </style>
 </head>
@@ -57,15 +58,17 @@
     <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">NightWatch</div><div class="nw-brand-sub">Night staff phone</div></div></div>
     <div class="when"><div class="t" id="clock">--:--</div><div class="m" id="mode"></div></div>
   </div>
+  <div id="offline-host" class="off-host"></div>
   <button class="nw-btn nw-btn--primary nw-btn--lg start" id="start">Start shift<small>Turns on sound and vibration for alerts</small></button>
   <div id="list" aria-live="assertive"><div class="quiet"><b>Connecting…</b></div></div>
   <div class="net" id="net"></div>
 </div>
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, LEVELS, timeline, contactsDone, post } = NW;
+const { offlineBadge, esc, icon, LEVELS, timeline, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
+offlineBadge($('offline-host'));
 let audio = null, seen = {};
 
 $('start').onclick = () => {

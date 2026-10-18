@@ -96,9 +96,44 @@
   .log .k { font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--nw-faint); }
   .log .k-L1 { color: var(--nw-l1); } .log .k-L2 { color: var(--nw-l2); } .log .k-L3, .log .k-contact { color: var(--nw-l3); }
   .log .k-ack, .log .k-resolved { color: var(--nw-ok); } .log .k-camera { color: var(--nw-accent); }
+  /* level-3 takeover: impossible to miss on a projector */
+  .takeover { margin: 18px 24px 0; border: 3px solid var(--nw-l3); border-radius: 22px; color: #fff;
+              background: repeating-linear-gradient(-45deg, rgba(255, 82, 99, .26) 0 26px, rgba(255, 82, 99, .12) 26px 52px), #2b0b13;
+              background-size: 200% 200%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 22px; align-items: center;
+              padding: 20px 24px; animation: nw-l3-pulse 1.2s ease-in-out infinite, stripes 6s linear infinite; }
+  .takeover[hidden] { display: none; }
+  @keyframes stripes { to { background-position: 148px 0; } }
+  .to-sign { display: grid; justify-items: center; gap: 6px; min-width: 120px; }
+  .to-sign .disc { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; background: var(--nw-l3); box-shadow: 0 0 0 8px rgba(255, 82, 99, .25); }
+  .to-sign .disc .nw-ico { width: 40px; height: 40px; color: #fff; }
+  .to-sign b { font-size: 15px; letter-spacing: .16em; }
+  .to-title { font: 800 30px/1.15 var(--nw-font-display); margin: 0 0 12px; letter-spacing: -.01em; }
+  .to-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 16px; color: #ffe3e6; margin-bottom: 12px; }
+  .to-facts span { display: inline-flex; align-items: center; gap: 7px; } .to-facts b { color: #fff; font-variant-numeric: tabular-nums; }
+  .to-facts .nw-ico { color: #ff9aa4; }
+  .takeover .nw-tip { background: rgba(7, 11, 20, .55); }
+  .to-act { display: grid; gap: 10px; min-width: 220px; }
+  .to-act .nw-btn { min-height: 64px; font-size: 20px; }
+  .to-act .resp { display: flex; align-items: center; gap: 8px; color: var(--nw-ok); font-weight: 750; background: rgba(7, 11, 20, .6);
+                  border: 1px solid rgba(61, 220, 151, .5); border-radius: 12px; padding: 10px 12px; }
+  .to-more { font-size: 13px; color: #ffc2c8; }
+  @media (max-width: 1000px) { .takeover { grid-template-columns: 1fr; margin: 14px 16px 0; padding: 16px; gap: 14px; } .to-sign { grid-auto-flow: column; justify-content: start; align-items: center; }
+    .to-sign .disc { width: 48px; height: 48px; } .to-sign .disc .nw-ico { width: 26px; height: 26px; } .to-title { font-size: 22px; } .to-facts { font-size: 14px; display: grid; gap: 6px; } .to-facts span { display: block; } .to-facts .nw-ico { vertical-align: -.25em; margin-right: 4px; } }
+
+  /* camera radar: positions only, never pixels */
+  .radar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .cam-card { border: 1px solid var(--nw-line); border-radius: 12px; background: var(--nw-bg-2); padding: 8px; }
+  .cam-card .ch { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; margin: 0 2px 6px; }
+  .cam-card .ch b { font-weight: 650; color: var(--nw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam-card .st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; letter-spacing: .06em; color: var(--nw-faint); flex: none; }
+  .cam-card svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .radar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--nw-muted); margin-top: 10px; }
+  .radar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .top-right .nw-btn { min-height: 36px; font-size: 13.5px; }
+
   @media (max-width: 640px) {
     .top-mid { order: 3; flex-basis: 100%; } .summary { width: 100%; border-radius: 14px; }
-    .top-right { margin-left: auto; } .nw-chip { white-space: normal; display: inline-block; } .nw-chip .nw-ico { margin-right: 4px; } .nw-chip .nw-dot { display: inline-block; margin-right: 4px; }
+    .top-right { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px 10px; } .top-right .nw-offline.is-on { order: 9; width: 100%; justify-content: center; } #report-link { padding: 0 10px; } .nw-clock { font-size: 30px; } .nw-chip { white-space: normal; display: inline-block; } .nw-chip .nw-ico { margin-right: 4px; } .nw-chip .nw-dot { display: inline-block; margin-right: 4px; }
     .summary { flex-wrap: wrap; gap: 6px 10px; } .summary span { white-space: normal; } .sysbar .lbl { width: 100%; }
     .residents { grid-template-columns: 1fr 1fr; gap: 8px; } .rcard { padding: 10px; }
     .rcard .r1 { flex-direction: column; align-items: flex-start; gap: 2px; } .rcard .r2 { flex-direction: column; gap: 2px; }
@@ -116,6 +151,8 @@
   </div>
   <div class="top-mid"><div class="summary" id="summary" role="status" aria-live="polite"></div></div>
   <div class="top-right">
+    <span id="offline-host"></span>
+    <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener" id="report-link">Shift report</a>
     <span class="nw-mode" id="mode">–</span>
     <div class="nw-clock" id="clock" aria-label="Facility clock">--:--</div>
   </div>
@@ -130,6 +167,7 @@
   <span class="nw-chip" id="c-visits"></span>
   <span class="nw-chip" id="c-ack"></span>
 </div>
+<section class="takeover" id="takeover" hidden role="alert" aria-live="assertive"></section>
 <main>
   <div class="col">
     <section class="nw-panel" aria-labelledby="h-map">
@@ -159,6 +197,11 @@
       <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-alerts">Active alerts <span class="nw-count" id="n-alerts">0</span></h2></div>
       <div id="alerts" aria-live="polite"></div>
     </section>
+    <section class="nw-panel" aria-labelledby="h-radar">
+      <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-radar">Camera radar · positions only</h2><span class="nw-chip" id="radar-ms"></span></div>
+      <div class="radar" id="radar"></div>
+      <div class="radar-legend" aria-hidden="true"><span><i style="background:var(--nw-room)"></i>Room side</span><span><i style="background:var(--nw-hall)"></i>Hallway side</span><span><i style="background:var(--nw-ink-2)"></i>Not sure yet</span><span>No video is shown or stored</span></div>
+    </section>
     <section class="nw-panel" aria-labelledby="h-rec">
       <div class="nw-panel-head"><h2 class="nw-panel-title" id="h-rec">Draft care records</h2></div>
       <div id="records"></div>
@@ -167,9 +210,11 @@
 </main>
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
+const { offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
+$('report-link').insertAdjacentHTML('afterbegin', icon('report'));
+offlineBadge($('offline-host'));
 
 const heat = (u) => (u >= 0.9 ? 'var(--nw-l3)' : u >= 0.6 ? 'var(--nw-l2)' : u >= 0.35 ? 'var(--nw-l1)' : 'var(--nw-ok)');
 const ZONE = { room: 'In room', corridor: 'Corridor', common: 'Common room', exit: 'At the exit', outside: 'OUTSIDE' };
@@ -412,6 +457,94 @@ function renderHeader(s) {
   $('c-ack').innerHTML = `${icon('clock')}Median time to acknowledge <b>${s.stats.median_ack_s == null ? '–' : esc(s.stats.median_ack_s) + ' s'}</b>`;
 }
 
+/* ------------------------------------------------------------------ level-3 takeover */
+function whereNow(a, s) {
+  const r = s.residents.find((x) => x.id === a.resident);
+  const ex = s.exits.find((e) => e.id === a.exit);
+  if (r && r.zone === 'outside') return `OUTSIDE${ex ? ` via ${ex.label}` : ''}`;
+  if (r && !r.in_bed) return ZONE[r.zone] + (r.zone === 'exit' && ex ? ` · ${ex.label}` : '');
+  return ex ? ex.label : r ? `Room ${r.room}` : '–';
+}
+let toKey = null;
+function renderTakeover(s) {
+  const l3 = s.alerts.filter((a) => a.level === 3);
+  const box = $('takeover');
+  if (!l3.length) { box.hidden = true; toKey = null; return; }
+  const a = l3[0];
+  const key = [a.id, a.acked_by, a.title, a.suggestions[0], l3.length].join('|');
+  box.hidden = false;
+  if (key !== toKey) {
+    toKey = key;
+    box.innerHTML = `
+      <div class="to-sign"><div class="disc">${icon('siren')}</div><b>EMERGENCY</b><span class="nw-ladder nw-l3" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
+      <div style="min-width:0">
+        <h2 class="to-title">${esc(a.title)}</h2>
+        <div class="to-facts">
+          ${a.resident ? `<span>${icon('user')}<b>${esc(a.resident)}</b>${a.description ? ` · ${esc(a.description)}` : ''}</span>` : ''}
+          <span>${icon('pin')}<b class="to-where"></b></span>
+          <span>${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b></span>
+          <span>${icon('clock')}First alert <b class="to-age"></b></span>
+        </div>
+        ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div></div></div>` : ''}
+        ${l3.length > 1 ? `<div class="to-more" style="margin-top:8px">+ ${l3.length - 1} more emergency alert${l3.length > 2 ? 's' : ''} below</div>` : ''}
+      </div>
+      <div class="to-act">
+        ${a.acked_by ? `<div class="resp">${icon('walk')}${esc(a.acked_by)} responding</div>`
+          : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
+        <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button>
+      </div>`;
+  }
+  box.querySelector('.to-where').textContent = whereNow(a, s);
+  box.querySelector('.to-age').textContent = fmtAge(a.age_s);
+}
+
+/* ------------------------------------------------------------------ camera radar */
+const SIDE = { 1: ['var(--nw-room)', 'room'], '-1': ['var(--nw-hall)', 'hallway'], 0: ['var(--nw-ink-2)', '?'] };
+function radarSVG(c) {
+  const d = c.doorway && c.doorway.line;
+  let door = '';
+  if (d) {
+    const [x1, y1, x2, y2] = d.map((v) => v * 100);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+    const nx = -uy * c.doorway.inside, ny = ux * c.doorway.inside;   // towards the room side
+    const ax = x1 - ux * 300, ay = y1 - uy * 300, bx = x2 + ux * 300, by = y2 + uy * 300;
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, cl = (v) => Math.max(8, Math.min(94, v));
+    door = `<polygon points="${ax},${ay} ${bx},${by} ${bx + nx * 300},${by + ny * 300} ${ax + nx * 300},${ay + ny * 300}" fill="var(--nw-room)" fill-opacity=".1"/>
+      <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--nw-accent)" stroke-width="1.6" stroke-dasharray="4 3"/>
+      <text x="${cl(mx + nx * 34)}" y="${cl(my + ny * 34)}" fill="var(--nw-room)" font-size="6" font-weight="800" text-anchor="middle" letter-spacing=".08em" opacity=".8">ROOM SIDE</text>
+      <text x="${cl(mx - nx * 34)}" y="${cl(my - ny * 34)}" fill="var(--nw-hall)" font-size="6" font-weight="800" text-anchor="middle" letter-spacing=".08em" opacity=".8">HALLWAY</text>`;
+  }
+  const tracks = (c.tracks || []).map((t) => {
+    const [col, word] = SIDE[t.side] || SIDE[0];
+    const fx = (t.x1 + t.x2) * 50, fy = t.y2 * 100;
+    const trail = (t.trail || []).map(([x, y]) => `${(x * 100).toFixed(1)},${(y * 100).toFixed(1)}`).join(' ');
+    return `<g opacity="${t.confirmed ? 1 : .55}">
+      <rect x="${t.x1 * 100}" y="${t.y1 * 100}" width="${(t.x2 - t.x1) * 100}" height="${(t.y2 - t.y1) * 100}" rx="3" fill="none" stroke="${col}" stroke-width=".8" stroke-opacity=".5" ${t.confirmed ? '' : 'stroke-dasharray="2 2"'}/>
+      ${trail ? `<polyline points="${trail}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".6"/>` : ''}
+      <circle cx="${fx}" cy="${fy}" r="3.2" fill="${col}" stroke="#070b14" stroke-width="1"/>
+      <text x="${fx}" y="${Math.max(7, t.y1 * 100 - 2)}" fill="${col}" font-size="5.5" font-weight="800" text-anchor="middle">#${esc(t.id)} · ${word}</text></g>`;
+  }).join('');
+  const off = !c.live ? `<g transform="translate(38 30) scale(1)" fill="none" stroke="var(--nw-faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g transform="scale(1)">${paths.camera}</g></g>
+      <text x="50" y="68" fill="var(--nw-muted)" font-size="7.5" font-weight="700" text-anchor="middle">Camera off</text>
+      <text x="50" y="78" fill="var(--nw-faint)" font-size="5.5" text-anchor="middle">start it on /camera/</text>` : '';
+  return `<svg viewBox="0 0 100 100" role="img" aria-label="${esc(c.label)}: ${c.live ? `${(c.tracks || []).length} people tracked` : 'camera off'}">
+    <defs><clipPath id="clip-${esc(c.id)}"><rect width="100" height="100" rx="6"/></clipPath>
+      <pattern id="grid-${esc(c.id)}" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#16223d" stroke-width=".5"/></pattern></defs>
+    <g clip-path="url(#clip-${esc(c.id)})"><rect width="100" height="100" fill="#09101e"/><rect width="100" height="100" fill="url(#grid-${esc(c.id)})"/>
+    ${c.live || d ? door : ''}${c.live ? tracks : ''}${off}</g>
+    <rect x=".5" y=".5" width="99" height="99" rx="6" fill="none" stroke="var(--nw-line-strong)"/></svg>`;
+}
+function renderRadar(s) {
+  const cams = s.cameras || [];
+  $('radar-ms').innerHTML = cams.some((c) => c.live) && s.camera_p50_ms != null ? `${icon('chip')}<b>${esc(s.camera_p50_ms)} ms</b>/frame` : `${icon('camera')}Camera off`;
+  $('radar').innerHTML = cams.length ? cams.map((c) => {
+    const n = (c.tracks || []).length;
+    const st = !c.live ? '<span class="st"><span class="nw-dot"></span>OFF</span>'
+      : `<span class="st" style="color:${n ? 'var(--nw-hall)' : 'var(--nw-ok)'}"><span class="nw-dot ${n ? 'is-hit' : 'is-live'}"></span>${n ? `${n} ${n > 1 ? 'PEOPLE' : 'PERSON'}` : 'CLEAR'}</span>`;
+    return `<div class="cam-card"><div class="ch"><b title="${esc(c.label)}">${esc(c.label.replace(/ camera$/i, ''))}</b>${st}</div>${radarSVG(c)}</div>`;
+  }).join('') : `<div class="nw-empty">${icon('camera')}<div><b>No cameras configured</b>Door contacts and wearables still work.</div></div>`;
+}
+
 /* ------------------------------------------------------------------ loop */
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
@@ -422,7 +555,7 @@ document.addEventListener('click', async (e) => {
 async function tick() {
   let s;
   try { s = await (await fetch('/api/state')).json(); } catch { $('summary').innerHTML = '<b>Server not reachable</b>'; return; }
-  renderHeader(s); updateMap(s); renderAlerts(s); renderRecords(s); renderResidents(s); renderLog(s);
+  renderHeader(s); renderTakeover(s); updateMap(s); renderAlerts(s); renderRadar(s); renderRecords(s); renderResidents(s); renderLog(s);
 }
 setInterval(tick, 700); tick();
 </script>
