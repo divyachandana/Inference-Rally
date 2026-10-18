@@ -10,8 +10,12 @@ Residents are **synthetic**. Anything marked *simulated* below is labelled that 
 
 Open <http://localhost:8000/> (it goes to `/home/`).
 
-**You should see:** every screen as a card, a 6-digit phone-pairing PIN, and *System status* showing the
-ExecuTorch models that are live (`normal_pattern_*.pte`, `person_ssdlite_*.pte`) and whether they run on CPU or NPU.
+**You should see:** *Tonight so far* (alerts, median response, records to file), every screen as a card, the
+6-digit phone-pairing PIN with a QR code for the phone link, and *System status* showing the ExecuTorch models that
+are live (`normal_pattern_*.pte`, `person_ssdlite_*.pte`) and whether they run on CPU or NPU. The same navigation bar
+is on every page.
+
+![Home page](img/home.png)
 
 ## 0:15 · Set up two windows
 
@@ -27,9 +31,11 @@ On the presenter page, click **R-07 heads for the front door** (or press **1**).
 |---|---|
 | ~8 s | Clock jumps to **02:08 · NIGHT**. Level 1 **heads-up**: R-07 is up, unusual for this hour (the normal-pattern model through ExecuTorch). A countdown shows when it climbs. |
 | ~23 s | R-07 reaches the exit, the **front entrance opens**: Level 2 **urgent**, door turns red on the floor plan. |
-| ~38 s | Nobody answered, so Level 3 **emergency**: a full-width red takeover at the top, all phones alarmed, then the contact chain (on-call supervisor, emergency services) shown and logged as **(simulated)**. Nothing is actually dialled. |
+| ~38 s | Nobody answered, so Level 3 **emergency**: a full-width red takeover at the top, all staff phones alarm, and **Who's been contacted** fills in: on-call supervisor, family of R-07, owner, emergency services. Each shows **Simulated** because contacts are a dry run until the laptop turns live sending on, and emergency services are always simulated. |
 
-![Level 3 emergency on the nurse station](img/dashboard-emergency.png)
+![Level 3 takeover with the contact fan-out, every contact Simulated](img/contacts-fanout.png)
+
+Also open <http://localhost:8000/wall/> on a second screen: the corridor display turns into a full-screen emergency.
 
 ## 1:00 · The answered night
 
@@ -67,9 +73,18 @@ HALLWAY), never video. Try the camera's **ON** switch: off means the server drop
   which runs NPU vs CPU (whatever builds exist in `models/`) on this laptop. Each run is labelled with the
   machine it ran on; runs from the developer MacBook say *Dev MacBook (not the demo hardware)*.
 
+## 1:50 · For families and staff (optional)
+
+- <http://localhost:8000/family/?id=R-07>: "How was their night?" in plain words for one resident, no video and no
+  other residents.
+- <http://localhost:8000/help/>: what to do at each level, setup and troubleshooting.
+- <http://localhost:8000/settings/>: drag rooms, doors and cameras on the floor-plan editor (please don't press
+  *Save*: it restarts the night).
+
 ## 1:55 · Pull the network
 
-Turn Wi-Fi off. **You should see:** everything keeps working; the dashboard reads *Internet needed: No*.
+Turn Wi-Fi off. **You should see:** detection, escalation and the staff phones keep working; the dashboard reads
+*Internet needed: No*. (Only optional off-site contact messages need the internet; without it they're marked simulated.)
 
 ## What's real and what's simulated
 
@@ -78,7 +93,8 @@ Turn Wi-Fi off. **You should see:** everything keeps working; the dashboard read
 | Two ExecuTorch models (`.pte`): person detector and normal-pattern model, CPU via XNNPACK; QNN export path for the NPU | Whether this run uses the NPU: check *System status* on `/home/` or the chips on the dashboard, which name the device |
 | Person detection on webcam frames, tracker, doorway-line crossing, privacy view, camera off / night-only | **Camera: R-07 walks out** feeds simulated camera data (tagged SIMULATED) |
 | Escalation ladder, day/night rules, acknowledgement, found safe, severity, draft care records, shift report | Residents and their profiles are synthetic; sensor events in scenarios come from the simulator |
-| Phone pairing with a PIN over local Wi-Fi; works offline | The L3 contact chain never calls anyone: steps are shown and logged as (simulated) |
+| Phone pairing with a PIN over local Wi-Fi; works offline | Contact fan-out is a **dry run** in the demo (each contact: *Simulated*); real ntfy / iMessage / Twilio sending exists but only when the laptop turns it on |
+| Restart-safe state, QA gate (`scripts/qa.py`) | **Emergency services are always simulated**: NightWatch never calls 911 |
 | `/perf/` measurements are real measurements of the machine they ran on | "Normal" for the small model was learned from simulated days |
 
 More: [README](../README.md) (honest limits, measured performance) · [ARCHITECTURE.md](ARCHITECTURE.md) (diagram, data map).

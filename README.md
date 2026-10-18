@@ -9,7 +9,9 @@ Judges: a 2-minute guided tour is in **[docs/JUDGES.md](docs/JUDGES.md)**.
 - **Sees the moment that matters.** A hallway camera runs a person detector through ExecuTorch on the laptop;
   when a resident's feet cross the doorway line going out at night, the night phone gets a quiet heads-up.
 - **Climbs only when nobody answers.** Heads-up → urgent (exit door opens) → emergency (still no answer):
-  all phones, on-call supervisor, then the facility's emergency chain. "I'm going" stops the climb.
+  every staff phone alarms and the contact list fans out (on-call supervisor, family, owner) over free channels
+  (ntfy push, iMessage) or optional Twilio calls/SMS. It's a dry run until the nurse station turns it on, and
+  emergency services are always simulated. "I'm going" stops the climb.
 - **Hands over the paperwork.** Every closed alert gets the care team's severity badge and a draft care-record
   entry in their format; the morning shift report is one page.
 
@@ -30,18 +32,23 @@ Then:
 
 1. On <http://localhost:8000/sim/> (presenter page) click **R-07 heads for the front door** (02:08 · night, key **1**).
 2. Watch <http://localhost:8000/dashboard/>: a heads-up, then the front door opens (urgent), then, if nobody
-   answers, the full-screen emergency view. Open <http://localhost:8000/staff/> in another window to be the
+   answers, the full-screen emergency view with **Who's been contacted** (a dry run: each contact shows
+   *Simulated*). Open <http://localhost:8000/staff/> in another window to be the
    night nurse: tap **I'm going** and the climb stops; **Found safe** closes it.
 3. Click **R-15 ensuite trip** (key **2**): a normal 3 a.m. bathroom trip. Nothing fires.
 4. Open <http://localhost:8000/report/> for the morning handover, and <http://localhost:8000/perf/> for live
-   ExecuTorch timings.
+   ExecuTorch timings. <http://localhost:8000/> (home) lists every screen.
+
+Before a demo or the code freeze, `./scripts/qa.sh` (Windows: `powershell -ExecutionPolicy Bypass -File scripts/qa.ps1`)
+runs the [QA gate](#qa-gate) on its own server.
 
 The full judge walkthrough, including the camera, is in [docs/JUDGES.md](docs/JUDGES.md).
 
 ## Why on-device
 
-- **Offline.** Facility internet drops at night. Everything (models, alerts, phones over the local Wi-Fi) works
-  with the internet unplugged; the dashboard shows "Internet needed: No".
+- **Offline.** Facility internet drops at night. Detection, escalation and the staff phones (over the local
+  Wi-Fi) work with the internet unplugged; the dashboard shows "Internet needed: No". Only the optional
+  off-site contact messages need a connection, and without one they are marked simulated with the reason.
 - **Privacy.** Cameras pointed at people with dementia can't stream to a cloud. Frames are analysed in memory
   and dropped; only positions reach the alert logic; the nurse station shows a radar, never video. Each camera
   can be off or night-only, and off means the webcam is released.
@@ -86,7 +93,11 @@ recorded in [nightwatch/bench/README.md](nightwatch/bench/README.md). We don't q
   resident's own pattern from their first weeks.
 - Demo residents are **synthetic** ([nightwatch/demo/facility.json](nightwatch/demo/facility.json)); every number there is invented.
 - The presenter scenario **Camera: R-07 walks out (simulated)** plays **simulated** camera data and is tagged SIMULATED on screen.
-- The Level 3 contact chain is **simulated**: it never calls or texts anyone, and never auto-dials 911.
+- Contacting people outside the building is a **dry run by default**: every contact is marked *Simulated* until
+  the nurse-station laptop turns live sending on (it resets to off on every start). **Emergency services are always
+  simulated**, and emergency short numbers (911, 112, 999 …) are refused. iMessage needs a Mac (the Snapdragon
+  laptop can use ntfy push or Twilio); ntfy push goes through ntfy.sh unless you self-host it.
+- State survives a restart within the same night, but there is no database: one laptop, one night's state file.
 - Other sensor events in the demo come from the browser simulator; real door and heart-rate bridges exist (see [Sensors](#sensors)).
 - NPU results: see [Measured performance](#measured-performance). Until they are in the bench README, the claim is
   "built for the NPU", not "runs on the NPU".
@@ -97,17 +108,21 @@ recorded in [nightwatch/bench/README.md](nightwatch/bench/README.md). We don't q
 | | |
 |---|---|
 | ![Staff phone during an urgent alert, with "I'm going" and "Found safe"](docs/img/staff-phone-alert.png) | ![Nurse station during a Level 3 emergency](docs/img/dashboard-emergency.png) |
-| **Staff phone** `/staff/` (375 px): what to look for, what has calmed this resident before, one-tap answers. | **Emergency** at the nurse station: still no answer, so all phones and the contact chain (simulated). |
+| **Staff phone** `/staff/` (375 px): what to look for, what has calmed this resident before, one-tap answers. | **Emergency** at the nurse station: still no answer, so a full-width takeover, all phones, and the contact fan-out. |
 | ![Camera radar on the dashboard during the simulated walk-out, tagged SIMULATED](docs/img/camera-radar-simulated.png) | ![Camera page with the doorway line drawn; the feed is an illustration](docs/img/camera-page.png) |
 | **Camera radar** during *Camera: R-07 walks out* (simulated camera data, tagged on screen). Positions only, never video. | **Camera page** `/camera/`: privacy view, live ms/frame, doorway set. **The feed in this screenshot is an illustration** (a drawn figure on a synthetic canvas; the capture browser has no webcam), so the detector correctly reports no person. |
 | ![Morning shift report](docs/img/shift-report.png) | ![On-device performance page](docs/img/perf.png) |
 | **Shift report** `/report/`: alerts, response times, severity, draft care records, camera switches. | **Performance** `/perf/`: live ExecuTorch timings; runs labelled with the machine they came from. |
 | ![Home page with every screen and the phone-pairing PIN](docs/img/home.png) | ![Story mode, step 1](docs/img/story.png) |
 | **Home** `/`: every screen, phone pairing PIN, system status. | **Story mode** `/story/`: a guided run of the real system. |
-| ![Settings page](docs/img/settings.png) | ![Wall display](docs/img/wall.png) |
-| **Settings** `/settings/`: night hours, escalation waits, residents, exits, cameras (local only). | **Wall display** `/wall/`: one glanceable status for a corridor screen. |
+| ![Floor-plan editor in Settings](docs/img/settings-floor-plan.png) | ![Wall display during an emergency](docs/img/wall.png) |
+| **Settings** `/settings/`: drag-and-drop floor-plan editor, night hours, escalation waits, residents, exits, cameras (saved locally, git-ignored). | **Wall display** `/wall/`: one glanceable status for a corridor screen, here during an emergency. |
+| ![Family view for one resident](docs/img/family.png) | ![Help center](docs/img/help.png) |
+| **Family view** `/family/?id=R-07`: "How was their night?" in plain words for one resident; no video, no other residents. | **Help** `/help/`: on-shift quick card, setup, troubleshooting, privacy. |
 
-Also on the laptop: `/help/` (help) and `/family/` ("How was their night?").
+![Emergency takeover with "Who's been contacted": every contact marked Simulated (dry run)](docs/img/contacts-fanout.png)
+
+<sub>Level 3 takeover with the contact fan-out in dry-run mode: on-call supervisor, family and owner would get an iMessage; emergency services are always simulated.</sub>
 
 ---
 
@@ -119,12 +134,15 @@ Also on the laptop: `/help/` (help) and `/family/` ("How was their night?").
 - [Run it (details)](#run-it-details)
 - [Hallway camera (person detection on the device)](#hallway-camera-person-detection-on-the-device)
 - [Phone pairing (security)](#phone-pairing-security)
+- [Emergency contacts (fan-out)](#emergency-contacts-fan-out)
+- [Restart-safe state and logs](#restart-safe-state-and-logs)
+- [QA gate](#qa-gate)
 - [Sensors](#sensors)
 - [Demo script (≤ 5 min)](#demo-script--5-min)
 - [Benchmark](#benchmark)
 - [Data and privacy](#data-and-privacy)
 - [Sources](#sources)
-- Other docs: [docs/JUDGES.md](docs/JUDGES.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/PITCH.md](docs/PITCH.md) · [docs/SUBMISSION.md](docs/SUBMISSION.md) · [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md)
+- Other docs: [docs/JUDGES.md](docs/JUDGES.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/PITCH.md](docs/PITCH.md) · [docs/SUBMISSION.md](docs/SUBMISSION.md) · [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) · [docs/PRIVACY_NOTICE.md](docs/PRIVACY_NOTICE.md) · [docs/UX_AUDIT.md](docs/UX_AUDIT.md)
 
 ## The problem
 
@@ -148,7 +166,8 @@ See [Sources](#sources) for more cases and the numbers we cite.
 - **Day vs night.** During the day, door openings are logged as visits. From 21:00 to 05:00 (the night band used in care records), the same door is urgent.
 - **No false alarms for normal nights.** A short ensuite trip at 3 am stays quiet; a heads-up clears itself when the resident settles back into bed.
 - **Speaks the care team's language.** Every closed alert gets the team's derived severity badge (1 routine / 2 notable / 3 escalation, from the highest level reached) and a draft care-record entry in their event format: location as a type (never a room), night as a band, affect and intervention left for staff to confirm. Less paperwork for the one person on nights.
-- **It never dials anyone in this build.** Contact steps are shown and logged as "(simulated)".
+- **Calls for help, safely.** At Level 3 (or when staff press **Call for help**) the contact list fans out; see
+  [Emergency contacts](#emergency-contacts-fan-out). Dry run by default; emergency services are always simulated.
 
 **Architecture diagram and data map:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -185,7 +204,9 @@ Fastest path on any machine: install, then let the health check tell you what wo
 ```bash
 pip install -r requirements.txt        # Windows on ARM: powershell -ExecutionPolicy Bypass -File setup_windows.ps1
 python nightwatch/check.py             # add --npu once the QNN models are in models/
-python -m pytest -q tests              # escalation rules, camera confirmation, tracker, box decoding, pairing
+python -m pytest -q tests -m "not e2e" # unit tests: escalation rules, camera, tracker, pairing, contacts, persistence
+python -m pytest -q tests/e2e          # ~20 s: a short run of the QA gate on its own server
+./scripts/qa.sh                        # full QA gate (~3 min); Windows: powershell -ExecutionPolicy Bypass -File scripts/qa.ps1
 ```
 
 Python 3.10+. The server is standard library only; loading a model needs `torch` and `executorch`
@@ -197,7 +218,8 @@ python nightwatch/server.py --model models/normal_pattern_xnnpack.pte --device C
 
 Open three tabs: <http://localhost:8000/dashboard/> (nurse station), <http://localhost:8000/staff/> (night
 staff phone), <http://localhost:8000/sim/> (presenter page and sensor simulator). Add `--lan` so a real phone on the same Wi-Fi
-can open `/staff/` at this computer's IP. The full API is documented at the top of
+can open `/staff/` at this computer's IP. Add `--fresh` to start a clean night instead of restoring tonight's
+saved state. The full API is documented at the top of
 [nightwatch/server.py](nightwatch/server.py).
 
 Retrain / re-export:
@@ -266,7 +288,54 @@ can see or answer alerts. The laptop itself is trusted; any other device must en
 the nurse-station dashboard** (also printed at startup) once. It then gets a random token that it sends with every
 request; only a hash is stored (`logs/paired_devices.json`, git-ignored). Wrong PINs lock a device out for 60 s
 after 5 tries. Pages hold no data; every `/api/` call from another device without a valid token gets `401`.
-`--pin 123456` fixes the PIN for a demo; `--unpair-all` forgets every phone. Code: [nightwatch/pairing.py](nightwatch/pairing.py).
+`--pin 123456` fixes the PIN for a demo; `--unpair-all` forgets every phone. The home page (`/home/`) shows the
+phone link as a QR code generated on the laptop (no internet needed). Live updates use Server-Sent Events
+(`/api/events`); a paired phone passes its token as `?token=`. Code: [nightwatch/pairing.py](nightwatch/pairing.py).
+
+## Emergency contacts (fan-out)
+
+When an alert first reaches Level 3, or a staff member presses **Call for help**, NightWatch contacts the list
+kept on the presenter page (`/sim/` → *Contacts · who gets called*, laptop only; saved to git-ignored
+`data/contacts.local.json`). Each contact has a role (on-call, family, owner, emergency services, other) and a channel:
+
+| Channel | Cost | Needs |
+|---|---|---|
+| `push` | free | [ntfy](https://ntfy.sh): the contact subscribes to a private topic in the ntfy app (`NTFY_SERVER` to self-host) |
+| `imessage` | free | a Mac: the laptop's Messages app sends it (not available on the Windows laptop) |
+| `call`, `sms` | paid | Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` in the environment, never in a file |
+| `simulated` | — | logged only |
+
+Channels combine with `+` (e.g. `push+imessage`). Safety rules, all tested in `tests/test_backend_notify*.py`:
+
+- **Dry run by default.** Nothing real is sent until the nurse-station laptop turns live sending on; that switch is
+  never saved, so every server start is a dry run again. In a dry run each contact shows *Simulated* with the reason.
+- **Emergency services are always simulated**, whatever their channel says. Emergency short numbers (911, 112,
+  999 …) and anything shorter than 8 digits are refused for every contact.
+- At most one real fan-out per alert per 60 s, 5 real calls/SMS per fan-out, 20 per hour.
+- Messages carry alert facts only (who, where, time, level, outside temperature), never video or health readings,
+  and start with "This is a NightWatch demo." Family contacts hear only about their own resident.
+- Sending runs in background threads with an 8 s timeout, so an alert never waits on the network. Staff phones on
+  the local Wi-Fi are alerted by the laptop either way.
+
+Code and the full rules: [nightwatch/notify.py](nightwatch/notify.py). API: `GET/POST /api/contacts`, `POST /api/notify`,
+`POST /api/contacts/test` (see [nightwatch/server.py](nightwatch/server.py)).
+
+## Restart-safe state and logs
+
+Alerts (history, care records, acknowledgements), events, visits, camera on/off/schedule, doorway lines and the demo
+clock are saved to `logs/night_state.json` (git-ignored) about 1 s after every change, and restored on the next start
+if the file is from the same night; `--fresh` starts clean. Ctrl+C saves before exiting. Requests, engine events and
+errors go to `logs/nightwatch.log` (JSON lines, rotated at 5 MB). `GET /api/health` reports the model, cameras,
+uptime, git version and whether state was restored.
+
+## QA gate
+
+[`scripts/qa.py`](scripts/qa.py) (standard library only) starts its **own** server on a free port with a temp copy of
+the demo facility, runs every flow (static page checks, unanswered elopement with escalation timings, acknowledged
+elopement, bathroom trip, day visits, camera pause, phone pairing, perf), always stops the server, prints
+PASS/FAIL/WARN and writes `logs/qa/<timestamp>.md`. Exit code 0 only if nothing failed. `--rules` skips the models,
+`--only static,pairing` runs a subset, `--lan-check` also calls it over the LAN IP. Wrappers:
+[`scripts/qa.sh`](scripts/qa.sh), [`scripts/qa.ps1`](scripts/qa.ps1).
 
 ## Sensors
 
@@ -314,6 +383,8 @@ go to `logs/bench/`; setup, caveats and the results tables are in [nightwatch/be
 - The design was informed by a memory-care professional on our team and de-identified care records.
   Those records stay in `data/` (git-ignored) and are never committed. [`tools/build_profile.py`](tools/build_profile.py) turns them
   into aggregate-only profiles, locally.
+- Settings, contacts and paired-phone hashes live in git-ignored `data/` and `logs/` on the laptop only.
+- A families' notice template for facilities: [docs/PRIVACY_NOTICE.md](docs/PRIVACY_NOTICE.md) (template, not legal advice).
 
 ## Sources
 
