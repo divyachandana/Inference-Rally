@@ -108,7 +108,8 @@ class Engine:
             self.outside_temp_c = spec["outside_temp_c"]
             self.residents = {r["id"]: Resident(**r) for r in spec["residents"]}
             self.exits = {e["id"]: Exit(**e) for e in spec["exits"]}
-            self.cameras = {c["id"]: dict(c, streak=0, persons=0, last_frame=0.0, last_log=0.0) for c in spec.get("cameras", [])}
+            self.cameras = {c["id"]: dict(c, streak=0, persons=0, last_frame=0.0, last_log=0.0, enabled=True, schedule="always")
+                            for c in spec.get("cameras", [])}
             self.camera_latencies: deque[float] = deque(maxlen=300)
             self.alerts: list[Alert] = []
             self.events: deque[dict[str, str]] = deque(maxlen=60)
@@ -213,6 +214,35 @@ class Engine:
         label = ex.label if ex else exit_id
         a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
         a.went_outside = True
+
+    def camera_active(self, cam_id: str) -> tuple[bool, str]:
+        """Should frames from this camera be analysed right now? (False = drop them unseen.)"""
+        with self.lock:
+            cam = self.cameras.get(cam_id)
+            if cam is None:
+                return False, "unknown camera"
+            if not cam["enabled"]:
+                return False, "turned off"
+            if cam["schedule"] == "night" and not self.is_night():
+                return False, "night only (21:00-05:00)"
+            return True, ""
+
+    def set_camera(self, cam_id: str, enabled: bool | None = None, schedule: str | None = None,
+                   by: str = "staff") -> dict[str, object]:
+        """Turn a camera's analysis on/off or set it to night-only. Logged, so the record shows who did it."""
+        with self.lock:
+            cam = self.cameras.get(cam_id)
+            if cam is None:
+                return {"error": f"unknown camera {cam_id!r}"}
+            if enabled is not None and enabled != cam["enabled"]:
+                cam["enabled"] = enabled
+                self.log("camera", f"{cam['label']} turned {'ON' if enabled else 'OFF'} by {by}")
+            if schedule in ("always", "night") and schedule != cam["schedule"]:
+                cam["schedule"] = schedule
+                self.log("camera", f"{cam['label']}: {'night only (21:00-05:00)' if schedule == 'night' else 'always on'} ({by})")
+            if not self.camera_active(cam_id)[0]:
+                cam["persons"], cam["streak"], cam["tracks"] = 0, 0, []
+            return {"ok": True}
 
     def camera(self, cam_id: str, persons: int, ms: float,
                crossings: list[dict[str, object]] | None = None, doorway: bool = False) -> dict[str, object]:
@@ -440,7 +470,9 @@ class Engine:
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
                              "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway"),
                              "tracks": c.get("tracks", []) if time.time() - c["last_frame"] < 3 else [],
-                             "simulated": bool(c.get("simulated")) and time.time() - c["last_frame"] < 3}
+                             "simulated": bool(c.get("simulated")) and time.time() - c["last_frame"] < 3,
+                             "enabled": c["enabled"], "schedule": c["schedule"],
+                             "active": self.camera_active(c["id"])[0], "paused_reason": self.camera_active(c["id"])[1]}
                             for c in self.cameras.values()],
                 "camera_p50_ms": round(sorted(self.camera_latencies)[len(self.camera_latencies) // 2], 1)
                                  if self.camera_latencies else None,
@@ -549,6 +581,8 @@ def _sim_camera_frame(i: int, n: int) -> Callable[[Engine], object]:
     Feeds the same path as a real frame (tracks + crossing) and is flagged "simulated" in the state.
     """
     def act(e: Engine) -> None:
+        if not e.camera_active("hall12")[0]:
+            return
         with e.lock:
             cam = e.cameras["hall12"]
             cam["doorway"], cam["simulated"] = SIM_DOORWAY, True

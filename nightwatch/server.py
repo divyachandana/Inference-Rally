@@ -17,6 +17,7 @@ API (JSON):
     POST /api/clock     {"time": "02:08", "speed": 1}
     POST /api/frame     {"camera": "hall12", "jpeg": "<base64>"}   (analysed in memory, never stored)
     POST /api/camera/config {"camera": "hall12", "line": [x1, y1, x2, y2] | null, "inside": 1 | -1}
+                        or {"camera": "hall12", "enabled": true|false, "schedule": "always"|"night", "by": "..."}
     POST /api/scenario  {"name": "night_elopement" | "night_bathroom" | "day_visits" | "reset"}
 """
 from __future__ import annotations
@@ -110,6 +111,10 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
     if DETECTOR is None:
         return {"error": "no camera model loaded: start the server with --camera-model"}
     cam = str(body.get("camera", "hall12"))
+    active, why = ENGINE.camera_active(cam)
+    if not active:
+        # Camera is off (or outside its schedule): the frame is dropped without being decoded or analysed.
+        return {"paused": True, "reason": why, "tracks": [], "crossings": [], "people": 0}
     jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
     boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
     del jpeg
@@ -136,8 +141,16 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
 
 
 def _camera_config(body: dict[str, object]) -> dict[str, object]:
-    """Set (or clear, with line=null) the doorway line for one camera."""
+    """Set the doorway line (line=null clears it), and/or turn analysis on/off or night-only."""
     cam = str(body.get("camera", "hall12"))
+    if "enabled" in body or "schedule" in body:
+        out = ENGINE.set_camera(cam, bool(body["enabled"]) if "enabled" in body else None,
+                                str(body["schedule"]) if "schedule" in body else None, str(body.get("by", "staff")))
+        if out.get("error") or "line" not in body:
+            with TRACK_LOCK:
+                if not ENGINE.camera_active(cam)[0] and cam in TRACKERS:
+                    TRACKERS[cam].tracks = []
+            return out
     line = body.get("line")
     inside = int(body.get("inside", 1))  # type: ignore[arg-type]
     with TRACK_LOCK:

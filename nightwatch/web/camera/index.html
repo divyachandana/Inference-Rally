@@ -51,6 +51,21 @@
   .privacy { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .privacy b { color: var(--ink); }
   video, #grab { display: none; }
+  .power { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+  .power select { width: auto; flex: 1; min-width: 180px; }
+  .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1 1 220px; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch .knob { width: 46px; height: 26px; border-radius: 999px; background: var(--nw-line-strong); position: relative; flex: none; transition: background .15s; }
+  .switch .knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + .knob { background: var(--ok); }
+  .switch input:checked + .knob::after { transform: translateX(20px); }
+  .switch input:focus-visible + .knob { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .switch b { display: block; } .switch small { color: var(--muted); font-size: 12px; }
+  .off { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(5, 8, 14, .92); text-align: center; }
+  .off[hidden] { display: none; }
+  .off > div { display: grid; justify-items: center; gap: 6px; color: var(--muted); max-width: 320px; padding: 16px; }
+  .off b { color: var(--ink); font-size: 20px; }
+  @media (prefers-reduced-motion: reduce) { .switch .knob, .switch .knob::after { transition: none; } }
   @media (prefers-reduced-motion: reduce) { .banner { transition: none; } }
 </style>
 </head>
@@ -69,6 +84,8 @@
     <div class="stage" id="stage">
       <canvas id="view" width="720" height="720" aria-label="Camera view with detected people and the doorway line"></canvas>
       <div class="banner" id="banner" role="status" aria-live="assertive"></div>
+      <div class="off" id="off" hidden><div><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m2 2 20 20"/><path d="M7 7H3v13h14v-4M10 4h6l2 3h3v10"/><circle cx="12" cy="13" r="3"/></svg>
+        <b>Camera off</b><span id="off-why">Not watching. The webcam is released and nothing is analysed.</span></div></div>
       <div class="hint" id="hint">Start the camera, then draw the doorway line.</div>
     </div>
   </section>
@@ -89,6 +106,14 @@
     <div class="card">
       <h2>Setup</h2>
       <select id="cam" aria-label="Which camera this is"></select>
+      <div class="power">
+        <label class="switch"><input type="checkbox" id="power" checked><span class="knob" aria-hidden="true"></span>
+          <span><b id="power-label">Camera ON</b><small id="power-sub">Analysing frames on this laptop</small></span></label>
+        <select id="schedule" aria-label="When this camera watches">
+          <option value="always">Watch always</option>
+          <option value="night">Night only (21:00-05:00)</option>
+        </select>
+      </div>
       <div class="row" style="margin-top:10px">
         <button class="nw-btn nw-btn--primary" id="start">Start camera</button>
         <button class="nw-btn" id="draw">Draw doorway</button>
@@ -119,6 +144,7 @@ const V = 720, G = 320;
 const view = $('view').getContext('2d'), grab = $('grab').getContext('2d', { willReadFrequently: true });
 const full = $('full').getContext('2d'), FULL = 960;
 let running = false, tracks = [], door = null, drawing = null, sent = [], logRows = [];
+let stream = null, wanted = false, active = true;   // wanted = the user started the camera on this page
 
 const load = () => { try { return JSON.parse(localStorage.getItem('nw-door-' + $('cam').value) || 'null'); } catch { return null; } };
 const save = () => { try { localStorage.setItem('nw-door-' + $('cam').value, JSON.stringify(door)); } catch {} };
@@ -244,6 +270,7 @@ function flash(dir, id) {
 async function loop() {
   const v = $('video');
   while (running) {
+    if (!active) { await new Promise((ok) => setTimeout(ok, 300)); continue; }
     const roi = roiFor();
     if (roi) {
       // Crop the doorway area from the letterboxed full frame at the detector's resolution.
@@ -259,6 +286,7 @@ async function loop() {
     try {
       const r = await (await post('/api/frame', { camera: $('cam').value, jpeg, roi })).json();
       if (r.error) { $('status').textContent = r.error; await new Promise((ok) => setTimeout(ok, 1000)); continue; }
+      if (r.paused) { applyActive(false, r.reason); continue; }
       tracks = r.tracks;
       r.crossings.forEach((c) => flash(c.direction, c.track));
       $('model').textContent = r.model; $('device').textContent = r.device;
@@ -287,11 +315,43 @@ $('flip').onclick = () => { if (door) { door.inside *= -1; pushDoor(); } };
 $('clear').onclick = () => { door = null; drawing = null; $('stage').classList.remove('drawing'); pushDoor(); };
 $('cam').onchange = () => { door = load(); pushDoor(); };
 
+async function openStream() {
+  if (stream) return true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    $('video').srcObject = stream; await $('video').play();
+    return true;
+  } catch (e) { $('status').textContent = 'Camera unavailable: ' + e.message; return false; }
+}
+
+function closeStream() {
+  // Release the webcam completely (its light goes off): an "off" camera isn't even capturing.
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null; $('video').srcObject = null;
+}
+
+async function applyActive(isActive, reason) {
+  if (isActive === active) return;
+  active = isActive; tracks = [];
+  $('off').hidden = active;
+  if (!active) {
+    $('off-why').textContent = (reason === 'turned off' ? 'Turned off. ' : `Paused: ${reason}. `) + 'The webcam is released and nothing is analysed.';
+    closeStream();
+    $('status').textContent = 'Camera off'; $('dot').className = 'dot'; $('people').textContent = '0';
+    $('fps').textContent = '–'; $('ms').textContent = '–'; sent = [];
+  } else if (wanted) {
+    await openStream();
+  }
+}
+
+$('power').onchange = () => post('/api/camera/config', { camera: $('cam').value, enabled: $('power').checked, by: 'camera page' }).then(poll);
+$('schedule').onchange = () => post('/api/camera/config', { camera: $('cam').value, schedule: $('schedule').value, by: 'camera page' }).then(poll);
+
 $('start').onclick = async () => {
   if (running) return;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    $('video').srcObject = stream; await $('video').play();
+    wanted = true;
+    if (!(await openStream())) return;
     running = true; $('start').textContent = 'Camera on'; $('start').disabled = true; loop();
     if (!door) $('hint').textContent = 'Click "Draw doorway" and mark the door on the floor for precise detection.';
   } catch (e) { $('status').textContent = 'Camera unavailable: ' + e.message; }
@@ -303,6 +363,14 @@ async function poll() {
     $('clock').textContent = s.clock.slice(0, 5);
     $('mode').innerHTML = window.NW ? NW.icon(s.night ? 'moon' : 'sun') + (s.night ? ' Night' : ' Day') : (s.night ? 'Night' : 'Day');
     $('mode').className = 'nw-mode ' + (s.night ? 'is-night' : 'is-day');
+    const me = (s.cameras || []).find((c) => c.id === $('cam').value);
+    if (me) {
+      $('power').checked = me.enabled;
+      $('schedule').value = me.schedule;
+      $('power-label').textContent = me.enabled ? (me.active ? 'Camera ON' : 'Camera ON · paused') : 'Camera OFF';
+      $('power-sub').textContent = me.active ? 'Analysing frames on this laptop' : `Not watching: ${me.paused_reason}`;
+      applyActive(me.active, me.paused_reason);
+    }
     if (!$('cam').options.length) {
       $('cam').innerHTML = (s.cameras || []).map((c) => `<option value="${c.id}">${c.label.replace(/</g, '&lt;')}</option>`).join('');
       door = load(); if (door) pushDoor();

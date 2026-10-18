@@ -118,6 +118,10 @@ when someone stands on the line). With a doorway drawn, the page sends a **zoome
 detector, so people there appear larger, and **night boost** auto-stretches brightness/contrast of dark frames
 (capped at ×4 to avoid amplifying sensor noise) before detection.
 
+**Camera on/off and night only:** each camera can be turned off or set to watch only at night (21:00-05:00),
+from the camera page or the nurse station. Off means off: the server drops frames without decoding them and the
+camera page releases the webcam (its light goes off). Every switch is logged with who did it.
+
 **8-bit model:** `export_detector.py --int8 --calib data/calib` quantizes the detector (PT2E). 3.9 MB instead of
 13.8 MB, same boxes on our checks (box overlap 0.95-0.99), and int8 is the format the Hexagon NPU is built for
 (`--backend qnn --int8`). On a MacBook CPU it's only slightly faster (5.3 vs 5.7 ms). Calibrate on a few dozen

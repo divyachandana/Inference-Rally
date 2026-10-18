@@ -104,3 +104,20 @@ def test_with_a_doorway_presence_alone_does_not_fire(night: Engine) -> None:
     for _ in range(5):
         night.camera("hall12", 1, 5.0, [], doorway=True)
     assert open_alerts(night) == []
+
+
+def test_camera_off_drops_events_and_is_logged(night: Engine) -> None:
+    night.set_camera("hall12", enabled=False, by="test")
+    assert night.camera_active("hall12") == (False, "turned off")
+    assert any("turned OFF by test" in ev["text"] for ev in night.events)
+    night.set_camera("hall12", enabled=True)
+    assert night.camera_active("hall12")[0]
+
+
+def test_night_only_camera_is_paused_during_the_day() -> None:
+    e = Engine(FACILITY, RuleScorer(), l1_timeout=0, ack_timeout=0)
+    e.set_time("14:00")
+    e.set_camera("hall12", schedule="night")
+    assert e.camera_active("hall12") == (False, "night only (21:00-05:00)")
+    e.set_time("22:00")
+    assert e.camera_active("hall12")[0]
