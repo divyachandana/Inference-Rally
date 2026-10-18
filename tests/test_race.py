@@ -18,7 +18,7 @@ def _run(seed: int = 16) -> tuple[list[RaceEvent], dict[str, object]]:
     maze = generate_maze(
         settings.maze_width, settings.maze_height, seed, settings.loop_ratio, settings.branchiness
     )
-    specs: list[RacerSpec] = [s.model_copy(update={"sim": FAST}) for s in config.racers("demo")]
+    specs: list[RacerSpec] = [s.model_copy(update={"sim": FAST}) for s in config.racers("sim")]
     events: list[RaceEvent] = []
 
     def emit(event: RaceEvent) -> None:

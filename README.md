@@ -18,9 +18,9 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 ## Screenshots
 
-![DEMO mode: simulated NPU vs GPU vs CPU racing through the maze, with the live map and standings](docs/images/demo-race.png)
+![DEMO mode (earlier build): simulated NPU vs GPU vs CPU racing through the maze, with the live map and standings](docs/images/demo-race.png)
 
-| PLAY mode: you vs Llama-3.2-1B on the GPU | Race results |
+| PLAY mode (earlier Llama-3.2-1B build) | Race results |
 |---|---|
 | ![PLAY mode race](docs/images/play-race.png) | ![Results screen](docs/images/results.png) |
 
@@ -28,36 +28,46 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 | Mode | Racers | Needs |
 |---|---|---|
-| **DEMO** (default) | Simulated NPU vs GPU vs CPU — realistic speeds and mistakes | nothing |
-| **PLAY** | **DC (you, arrow keys)** vs **Llama-3.2-1B on the M1 GPU** (real, via llama.cpp) vs a simulated racer | llama.cpp running |
+| **DEMO** (default) | **Gemma-4-E2B on the Snapdragon NPU** (real, ExecuTorch + QNN) vs simulated GPU and CPU racers | the QNN bundle |
+| **PLAY** | **DC (you, arrow keys)** vs **Gemma-4-E2B on the NPU** (real) vs a simulated GPU racer | the QNN bundle |
 
-Switch with **G** (or the MODE button). Lineups live in `racers.yaml` (`demo`, `play`, `snapdragon`).
+Switch with **G** (or the MODE button). Lineups live in `racers.yaml` (`demo`, `play`, and `sim`, which
+is fully simulated and runs on any machine: `python -m inference_rally.server --profile sim`).
 
-## Quick start (Mac)
+Only the NPU racer is a real model; the GPU/CPU racers are simulated with speeds estimated relative to
+the measured NPU run (~170 ms to first token, ~13.7 tokens/s). Their HUD labels say **SIM**.
 
-```bash
-# 1. Python game server (once)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+## How the NPU racer works
+
+The game server launches `host\qnn_llm_host.exe` from the
+[ExecuTorch QNN bundle](https://github.com/divyachandana/gamehub) (`qnn:` in `racers.yaml` holds the
+paths) and talks to it over the named pipe `\\.\pipe\rally_gemma`. The model is loaded once (~3 s,
+in the background while the title screen shows) and stays loaded across races. Each junction is a
+one-shot request (`"reset": true`), streamed token by token so TTFT and tokens/sec are timed on our
+side. If a host is already serving the pipe (e.g. started with the bundle's `start_host.ps1
+-PipeName rally_gemma`), the game reuses it. Host output goes to `logs/qnn_host.log`.
+
+If the NPU host can't start, its car shows "MODEL OFFLINE" and keeps going with fallback moves.
+
+## Quick start (Windows on Snapdragon)
+
+Needs the QAIRT SDK (`C:\Qualcomm\AIStack\QAIRT\2.46.0.260424`) and the Gemma QNN bundle with its
+`.pte` and `tokenizer.json`. Adjust `qnn:` in `racers.yaml` if yours live elsewhere.
+
+```powershell
+# 1. Python game server (once) — ARM64 Python 3.12
+py -3.12-arm64 -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
 
 # 2. Frontend (once)
-cd frontend && npm install && cd ..
+cd frontend; npm install; npm run build; cd ..
 
-# 3. Run server (:8000) + UI (:5173)
-./scripts/dev.sh
+# 3. Run (serves the built UI)
+.venv\Scripts\python -m inference_rally.server
 ```
 
-Open <http://localhost:5173> and press **Enter**.
-
-### PLAY mode: real model on your Mac
-
-```bash
-brew install llama.cpp            # once
-./scripts/start_models_mac.sh     # second terminal; first run downloads the model (~0.8 GB)
-```
-
-Then press **G** in the game (MODE: PLAY) and **Enter**. If the model isn't running, its car shows
-"MODEL OFFLINE" and keeps going with fallback moves.
+Open <http://localhost:8000> and press **Enter**. For frontend work with hot reload, run
+`.\scripts\dev.ps1` instead (server on :8000, Vite UI on <http://localhost:5173>).
 
 In PLAY mode the overview map is locked until you finish — like the models, you only know where the
 exit is (follow the green beam).
@@ -79,24 +89,17 @@ exit is (follow the green beam).
 ## Layout
 
 - `src/inference_rally/` – Python game server
-  - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, real model (OpenAI-compatible), human
+  - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, Gemma on the NPU, human
+  - `qnn_host.py` launches `qnn_llm_host.exe` and speaks its named-pipe protocol
   - `prompts.py` junction prompt + reply parsing · `metrics.py` TTFT / tokens/sec timing
   - `models.py` typed config + event schema · `server.py` Starlette + Server-Sent Events
 - `frontend/` – Three.js split-screen game (Vite)
   - `world/` maze, scenery, procedural pixel textures · `cars/` car model, driving, option arrows
   - `render/` split-screen viewports, overview map · `hud/` HUD, leaderboard, overlays · `audio/` chiptune synth
-- `racers.yaml` – race settings and racer profiles (`demo`, `play`, `snapdragon`)
+- `racers.yaml` – race settings, NPU host paths (`qnn:`) and racer profiles (`demo`, `play`, `sim`)
 - `tests/` – pytest suite (game logic runs offline with simulated racers)
-- `models/` – exported `.pte` / `.gguf` models (git-ignored)
-- `scripts/` – `dev.sh` runs server + UI · `start_models_mac.sh` runs llama.cpp for PLAY mode
+- `scripts/` – `dev.ps1` (Windows) / `dev.sh` run server + UI
 - `docs/` – plan, architecture, coding standards
-
-## Demo build (single process)
-
-```bash
-cd frontend && npm run build && cd ..
-python -m inference_rally.server   # serves the built UI at http://localhost:8000
-```
 
 ## Checks
 

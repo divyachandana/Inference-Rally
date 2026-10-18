@@ -12,32 +12,48 @@ race:
   max_decisions: 80      # DNF after this many junctions
   countdown_s: 3
 
+# Gemma on the Snapdragon NPU: ExecuTorch + QNN, served by qnn_llm_host.exe over a named pipe.
+# The game server launches the host itself (or reuses one already serving the pipe) and keeps
+# the model loaded across races. Paths point at the gemma4_e2b_executorch_x_elite bundle.
+qnn:
+  bundle_dir: C:/Users/qc_de/Desktop/gemma4_e2b_executorch_x_elite-001/gemma4_e2b_executorch_x_elite
+  model_dir: models/gemma4_e2b_sc8380xp_ctxt_4000_ar_l-128
+  pte: gemma4_e2b_sc8380xp_ctxt_4000-001.pte
+  decoder_model_version: gemma4
+  qnn_sdk: C:/Qualcomm/AIStack/QAIRT/2.46.0.260424
+  hexagon_arch: v73      # Snapdragon X Elite (SC8380XP)
+  max_seq_len: 3800      # compiled context is 4000
+
 active_profile: demo
 
+# Simulated racers stand in for Gemma-4-E2B on the GPU and CPU. Their speeds are estimates
+# relative to the measured NPU run (~165 ms to first token, ~13.7 tokens/s, ~38-token replies).
 profiles:
-  # DEMO mode: simulated NPU vs GPU vs CPU with realistic speeds (no models needed).
+  # DEMO mode: real Gemma on the NPU vs simulated GPU and CPU racers.
   demo:
     - id: npu
-      name: Llama-3.2-1B
+      name: Gemma-4-E2B
+      label: NPU
       device: NPU
-      runtime: simulated
+      runtime: qnn
       color: "#1D9E75"
-      sim: {tps: 28.0, ttft_ms: 120, accuracy: 0.6}
+      pipe_name: rally_gemma
     - id: gpu
-      name: Llama-3.2-1B
+      name: Gemma-4-E2B
+      label: SIM GPU
       device: GPU
       runtime: simulated
       color: "#7F77DD"
-      sim: {tps: 17.5, ttft_ms: 230, accuracy: 0.6}
+      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
     - id: cpu
-      name: Llama-3.2-1B
+      name: Gemma-4-E2B
+      label: SIM CPU
       device: CPU
       runtime: simulated
       color: "#D85A30"
-      sim: {tps: 6.5, ttft_ms: 620, accuracy: 0.6}
+      sim: {tps: 5.5, ttft_ms: 1100, accuracy: 0.6, reply_tokens: [30, 40]}
 
-  # PLAY mode: you (DC) vs a real model on the Mac GPU vs a simulated racer.
-  # Start the model first: ./scripts/start_models_mac.sh
+  # PLAY mode: you (DC) vs real Gemma on the NPU vs a simulated GPU racer.
   play:
     - id: dc
       name: DC
@@ -45,42 +61,41 @@ profiles:
       device: HUMAN
       runtime: human
       color: "#F2C14E"
-    - id: llama_gpu
-      name: Llama-3.2-1B
-      label: 1B GPU
+    - id: npu
+      name: Gemma-4-E2B
+      label: NPU
+      device: NPU
+      runtime: qnn
+      color: "#1D9E75"
+      pipe_name: rally_gemma
+    - id: gpu
+      name: Gemma-4-E2B
+      label: SIM GPU
       device: GPU
-      runtime: openai
+      runtime: simulated
       color: "#7F77DD"
-      base_url: http://127.0.0.1:8102/v1
-      model: llama-3.2-1b-instruct
-    - id: sim
-      name: Simulated
+      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
+
+  # Everything simulated: works on any machine, no NPU needed (UI work, tests).
+  sim:
+    - id: npu
+      name: Gemma-4-E2B
       label: SIM NPU
       device: NPU
       runtime: simulated
       color: "#1D9E75"
-      sim: {tps: 28.0, ttft_ms: 120, accuracy: 0.6}
-
-  # Snapdragon laptop (OpenAI-compatible local servers: ExecuTorch / llama.cpp / GenieX).
-  snapdragon:
-    - id: npu
-      name: Llama-3.2-1B
-      device: NPU
-      runtime: openai
-      color: "#1D9E75"
-      base_url: http://127.0.0.1:8101/v1
-      model: llama3_2_1b_qnn
+      sim: {tps: 13.7, ttft_ms: 170, accuracy: 0.6, reply_tokens: [30, 40]}
     - id: gpu
-      name: Llama-3.2-1B
+      name: Gemma-4-E2B
+      label: SIM GPU
       device: GPU
-      runtime: openai
+      runtime: simulated
       color: "#7F77DD"
-      base_url: http://127.0.0.1:8102/v1
-      model: llama-3.2-1b-q4_0
+      sim: {tps: 9.0, ttft_ms: 400, accuracy: 0.6, reply_tokens: [30, 40]}
     - id: cpu
-      name: Llama-3.2-1B
+      name: Gemma-4-E2B
+      label: SIM CPU
       device: CPU
-      runtime: openai
+      runtime: simulated
       color: "#D85A30"
-      base_url: http://127.0.0.1:8103/v1
-      model: llama3_2_1b_xnnpack
+      sim: {tps: 5.5, ttft_ms: 1100, accuracy: 0.6, reply_tokens: [30, 40]}
