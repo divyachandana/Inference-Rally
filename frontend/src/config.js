@@ -35,6 +35,13 @@ export const CAR = Object.freeze({
   jumpHeight: 6, // peak of a rogue's hop over a hedge (world units)
 });
 
+/** The rogue's scouting drone (UNFAIR mode): where it hovers relative to its car. */
+export const DRONE = Object.freeze({
+  height: 3.6, // above the road, in view of the chase camera
+  ahead: 4, // in front of the car, scouting the junction
+  liftSeconds: 0.6, // time to rise off the roof
+});
+
 export const RENDER = Object.freeze({
   retroPixelScale: 3, // render at 1/3 resolution and upscale with crisp pixels
   clearColor: 0x0b0d12,

@@ -341,7 +341,8 @@ class RaceEngine:
             self._judge = None
             self._incident(racer, "offline", "Laya offline!")
             return False
-        used = probability >= rogue.threshold
+        threshold = rogue.drone_threshold if plan.kind == "drone" else rogue.threshold
+        used = probability >= threshold
         if used:
             racer.stats.cheats += 1
             if plan.kind == "jump":

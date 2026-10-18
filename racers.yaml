@@ -84,7 +84,8 @@ profiles:
 
   # UNFAIR mode: honest Gemma vs a rogue Qwen3 that may cheat. At each junction where a cheat
   # would help (a hedge jump that saves 2+ blocks, or a drone when circling), Laya on the NPU
-  # answers "should it cheat now?" and the rogue cheats if Laya says yes with p >= threshold.
+  # answers "should it cheat now?" and the rogue cheats if Laya says yes with p >= threshold
+  # (drone_threshold for the drone).
   unfair:
     - id: gemma
       name: Gemma-4-E2B
@@ -100,7 +101,13 @@ profiles:
       runtime: qnn
       color: "#E5484D"
       qnn_model: qwen
-      rogue: {jumps: 3, drones: 2, threshold: 0.4, jump_penalty_s: 1.5, drone_time_s: 2.0}
+      rogue:
+        threshold: 0.4         # Laya yes-probability needed to jump
+        drone_threshold: 0.15  # ... and to fly the drone (Laya rates drones lower)
+        jumps: 3
+        drones: 2
+        jump_penalty_s: 1.5
+        drone_time_s: 2.0
 
   # Everything simulated: works on any machine, no NPU needed (UI work, tests). Speeds are
   # estimates from the measured NPU runs (~170 ms to first token, ~12-14 tokens/s alone).

@@ -39,7 +39,10 @@ class RogueSpec(BaseModel):
 
     jumps: int = Field(default=3, ge=0, description="Hedge jumps per race")
     drones: int = Field(default=2, ge=0, description="Drone peeks per race")
-    threshold: float = Field(default=0.4, ge=0, le=1, description="Laya yes-probability to cheat")
+    threshold: float = Field(default=0.4, ge=0, le=1, description="Laya yes-probability to jump")
+    # Laya's drone answers run lower than its jump answers (about 0.17 when slightly unsure up
+    # to 0.54 when lost with the rival close), so the drone gets its own, lower bar.
+    drone_threshold: float = Field(default=0.15, ge=0, le=1, description="... to fly the drone")
     jump_penalty_s: float = Field(default=1.5, ge=0, description="Extra time to hop a hedge")
     drone_time_s: float = Field(default=2.0, ge=0, description="Time to fly the drone")
     min_jump_gain: int = Field(

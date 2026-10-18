@@ -207,6 +207,7 @@ export class Game {
       const entry = this.race.racers.get(event.racer);
       const uturn = event.heading !== entry.heading && isOpposite(event.heading, entry.heading);
       entry.car.startDrive(event, uturn);
+      entry.car.setDrone(false); // the drone found the road: recall it
       entry.heading = event.heading;
       entry.hud.setStatus('driving', 'DRIVING');
       entry.hud.setProgress(event.progress);
@@ -224,7 +225,8 @@ export class Game {
       if (event.used) {
         const left = event.kind === 'jump' ? event.jumps_left : event.drones_left;
         entry.hud.showBanner(`${what}! LAYA ${percent}% · ${left} LEFT`, 'bad');
-        entry.hud.setStatus('thinking', event.kind === 'jump' ? 'JUMPING!' : 'DRONE…');
+        entry.hud.setStatus('thinking', event.kind === 'jump' ? 'JUMPING!' : 'DRONE SCOUTING…');
+        if (event.kind === 'drone') entry.car.setDrone(true);
       } else {
         entry.hud.showBanner(`LAYA: NO ${what.toLowerCase()} (${percent}%)`, 'info');
       }

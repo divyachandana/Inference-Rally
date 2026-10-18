@@ -99,3 +99,11 @@ def test_rogue_stays_honest_when_laya_says_no_or_is_missing() -> None:
         declined = [e for e in events if e.type == "cheat"]
         assert all(not c.used for c in declined)
         assert bool(declined) == (probability is not None)
+
+
+def test_drone_has_its_own_lower_threshold() -> None:
+    events, _ = _race(probability=0.2)  # below the jump bar (0.4), above the drone bar (0.15)
+    cheats = [e for e in events if e.type == "cheat"]
+    assert cheats
+    for cheat in cheats:
+        assert cheat.used == (cheat.kind == "drone")
