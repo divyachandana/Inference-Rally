@@ -28,6 +28,19 @@ Show, visually and live, how on-device models running on the **Snapdragon NPU** 
 
 A fully simulated `sim` profile runs anywhere, without an NPU (UI work, tests).
 
+### Games (the hub)
+
+The landing page is a game hub; each game is the same race on a different track (`games:` in
+`racers.yaml`):
+
+| Game | Track |
+|---|---|
+| **Inference Rally** | A random hedge maze, new every race |
+| **San Francisco** | Real OpenStreetMap streets (North Beach, Alamo Square, Mission), some closed each race |
+
+Every race request names its game and map area; the race announces both, so a game page that
+opens while the other game's race is on screen asks for its own track.
+
 ---
 
 ## 2. Game view

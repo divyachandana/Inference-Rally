@@ -11,10 +11,23 @@ race:
   uturn_penalty_s: 0.6   # extra time for turning around
   max_decisions: 80      # DNF after this many junctions
   countdown_s: 3
-  # Real streets from OpenStreetMap (make another area with scripts/fetch_map.py).
-  # The maze closes some of them each race; loop_ratio: 1 keeps every real street open.
-  # Remove this line for a random grid of maze_width x maze_height.
-  street_map: maps/sf-north-beach.json
+
+# The game hub: same racers, NPU models and modes in every game, each with its own track.
+# A game without maps races a random hedge maze of maze_width x maze_height; a game with maps
+# races real streets from OpenStreetMap (scripts/fetch_map.py makes more), closing some of them
+# each race so it is still a maze (loop_ratio: 1 keeps every real street open). The first map
+# is the default; the MAP button cycles through the rest.
+games:
+  rally:
+    title: Inference Rally
+    tagline: AI models race taxis through a hedge maze
+  sf:
+    title: San Francisco
+    tagline: The same race on real San Francisco streets
+    maps:
+      - maps/sf-north-beach.json
+      - maps/sf-alamo-square.json
+      - maps/sf-mission.json
 
 # Models on the Snapdragon NPU: ExecuTorch + QNN, each served by its own qnn_llm_host.exe over a
 # named pipe (\\.\pipe\rally_<model key>). The game server launches the hosts itself (or reuses

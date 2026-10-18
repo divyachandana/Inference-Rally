@@ -97,6 +97,18 @@ body {
   border-color: var(--red);
 }
 
+.topbar button[hidden] {
+  display: none;
+}
+
+#btn-hub {
+  color: var(--yellow);
+}
+
+#btn-map {
+  border-color: #3fa7d6;
+}
+
 #btn-mode.unfair {
   color: #fff;
   background: var(--red);

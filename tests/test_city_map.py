@@ -7,7 +7,7 @@ import pytest
 
 from inference_rally.city_map import build_city_map, building_height, tile_range
 from inference_rally.config import load_config
-from inference_rally.errors import MapError
+from inference_rally.errors import ConfigError, MapError
 from inference_rally.maze import generate_maze
 from inference_rally.models import RaceEvent, RaceInitEvent
 from inference_rally.race import RaceEngine
@@ -130,7 +130,7 @@ def test_unreachable_exit_is_rejected() -> None:
 
 def test_race_announces_the_city_and_its_closed_streets() -> None:
     config = load_config()
-    city = config.city
+    city = config.city("sf", 0)
     assert city is not None
     maze = generate_maze(
         city.width,
@@ -157,3 +157,15 @@ def test_map_tiles_cover_the_area_with_a_padding_ring() -> None:
     assert (len(xs), len(ys)) == (1, 1)
     assert list(padded_xs) == [xs[0] - 1, xs[0], xs[0] + 1]
     assert list(padded_ys) == [ys[0] - 1, ys[0], ys[0] + 1]
+
+
+def test_games_pick_their_track_and_areas_wrap_around() -> None:
+    config = load_config()
+    assert config.city("rally", 0) is None  # the hedge maze game has no street map
+    sf = config.cities["sf"]
+    assert len(sf) == 3
+    assert config.city("sf", 1) == sf[1]
+    assert config.city("sf", 4) == sf[1]  # the MAP button just keeps counting
+    assert config.game(None) == "rally"
+    with pytest.raises(ConfigError):
+        config.game("monaco")

@@ -171,6 +171,12 @@ export const MODES = Object.freeze({
   unfair: { profile: 'unfair', label: 'UNFAIR' },
 });
 
+/** The hub's games (play.html?game=...): the server's games: in racers.yaml, by key. */
+export const GAMES = Object.freeze({
+  rally: { title: 'Inference Rally', logo: 'INFERENCE <span>RALLY</span>', titleLogo: 'INFERENCE<br><span>RALLY</span>' },
+  sf: { title: 'San Francisco', logo: 'SAN <span>FRANCISCO</span>', titleLogo: 'SAN<br><span>FRANCISCO</span>' },
+});
+
 /** Order the G key cycles through. */
 export const MODE_CYCLE = Object.freeze(['demo', 'play', 'unfair']);
 

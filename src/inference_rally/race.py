@@ -97,6 +97,9 @@ class RaceEngine:
         emit: EmitFn,
         judge: CheatJudge | None = None,
         city: CityMap | None = None,
+        game: str = "rally",
+        area: int = 0,
+        areas: list[str] | None = None,
     ) -> None:
         """Prepare a race.
 
@@ -107,10 +110,16 @@ class RaceEngine:
             emit: Function that publishes an event (e.g. to the SSE hub).
             judge: Decides whether a rogue racer cheats; without one, nobody cheats.
             city: The real street map the maze was carved from, if any.
+            game: Hub game this race belongs to.
+            area: Which of the game's maps this race runs on.
+            areas: Titles of the game's maps.
         """
         self.race_id = uuid.uuid4().hex[:8]
         self._maze = maze
         self._city = city
+        self._game = game
+        self._area = area
+        self._areas = areas or []
         self._settings = settings
         self._emit = emit
         self._judge = judge
@@ -455,6 +464,9 @@ class RaceEngine:
             t=self.now(),
             race_id=self.race_id,
             preview=preview,
+            game=self._game,
+            area=self._area,
+            areas=self._areas,
             maze=MazeView(
                 width=maze.width,
                 height=maze.height,

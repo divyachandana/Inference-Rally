@@ -11,14 +11,15 @@ export class Overlays {
     this.root = root;
     this.countdownTimer = null;
     this.place = null; // the street map's title, once a race with one is announced
+    this.logo = 'INFERENCE<br><span>RALLY</span>'; // the hub game's title-screen logo
   }
 
   /** Title screen shown before the first race. */
   showTitle() {
     this.root.className = 'overlay title';
     this.root.innerHTML = `
-      <div class="title-logo">INFERENCE<br><span>RALLY</span></div>
-      <div class="title-sub">ON-DEVICE AI MODELS RACE THROUGH ${(this.place ?? 'San Francisco').toUpperCase()}</div>
+      <div class="title-logo">${this.logo}</div>
+      <div class="title-sub">ON-DEVICE AI MODELS RACE THROUGH ${(this.place ?? 'a maze').toUpperCase()}</div>
       <div class="title-sub dim">EVERY TURN IS A DECISION · EVERY SECOND IS COMPUTE</div>
       <div class="blink">PRESS ENTER TO START</div>`;
   }

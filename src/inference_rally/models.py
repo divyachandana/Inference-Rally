@@ -87,10 +87,19 @@ class RaceSettings(BaseModel):
     max_decisions: int = Field(default=80, ge=1)
     countdown_s: int = Field(default=3, ge=0, le=10)
     token_event_interval_s: float = Field(default=0.1, gt=0)
-    street_map: str | None = Field(
-        default=None,
-        description="Real street map (scripts/fetch_map.py), relative to racers.yaml; "
-        "none = a random grid of maze_width x maze_height",
+
+
+class GameSpec(BaseModel):
+    """One game in the hub (``games:`` in ``racers.yaml``): same racers, its own track."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str
+    tagline: str = ""
+    maps: list[str] = Field(
+        default_factory=list,
+        description="Real street maps (scripts/fetch_map.py), relative to racers.yaml; "
+        "empty = a random hedge maze of maze_width x maze_height",
     )
 
 
@@ -265,6 +274,9 @@ class RaceInitEvent(_Event):
     type: Literal["race_init"] = "race_init"
     race_id: str
     preview: bool = Field(default=False, description="True = attract screen, race not started")
+    game: str = Field(default="rally", description="Hub game this race belongs to")
+    area: int = Field(default=0, ge=0, description="Which of the game's maps (if it has several)")
+    areas: list[str] = Field(default_factory=list, description="Titles of the game's maps")
     maze: MazeView
     racers: list[RacerView]
     settings: RaceSettings

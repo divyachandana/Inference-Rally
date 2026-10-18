@@ -4,7 +4,7 @@ Usage:
     python scripts/fetch_map.py sf-north-beach        # an area named in maps/areas.yaml
     python scripts/fetch_map.py my-area --bbox 37.79,-122.42,37.80,-122.40 --title "My area"
 
-Writes ``maps/<name>.json``; set ``race.street_map`` in racers.yaml to that file. The raw
+Writes ``maps/<name>.json``; add that file to a game's ``maps`` in racers.yaml. The raw
 download is kept in ``maps/.cache/`` so a re-run only re-processes (``--refresh`` downloads
 again). The area's street map pictures (OpenStreetMap's own map tiles, for the game's map
 panel) go to ``maps/tiles/`` once each. Map data © OpenStreetMap contributors, under the
@@ -103,7 +103,7 @@ def main() -> None:
     )
     print("  north-south: " + ", ".join(line.name for line in city.columns))
     print("  east-west:   " + ", ".join(line.name for line in city.rows))
-    print(f"Use it: set  street_map: maps/{args.name}.json  under race: in racers.yaml")
+    print(f"Use it: add  maps/{args.name}.json  to a game's maps: in racers.yaml")
 
 
 def _area(name: str, bbox: str | None, title: str | None) -> tuple[str, Bbox]:

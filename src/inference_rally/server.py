@@ -2,10 +2,12 @@
 
 Endpoints:
     GET  /api/events       SSE stream of race events (replays the current race on connect)
-    POST /api/race/start   start a new race; optional JSON body {"seed": int, "profile": str}
+    POST /api/race/start   start a new race; optional JSON body
+                           {"seed": int, "profile": str, "game": str, "area": int}
     POST /api/race/stop    stop the current race
     POST /api/race/preview show a profile's maze + racers on the attract screen, stopping any
-                           running race {"profile": str, "seed": int}
+                           running race (same body as start)
+    GET  /api/games        the hub's games, with their map titles
     POST /api/human/move   the human player's move at a junction {"racer": str, "move": str}
     GET  /api/health       liveness check
 
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -112,11 +115,13 @@ class RaceController:
         self._task: asyncio.Task[object] | None = None
         self._humans: dict[str, HumanDecider] = {}
 
-    def _build_engine(self, seed: int | None, profile: str | None) -> RaceEngine:
-        settings = self._config.race
-        if seed is not None:
-            settings = settings.model_copy(update={"seed": seed})
-        city = self._config.city
+    def _build_engine(self, request: RaceRequest) -> RaceEngine:
+        config = self._config
+        settings = config.race
+        if request.seed is not None:
+            settings = settings.model_copy(update={"seed": request.seed})
+        game = config.game(request.game)
+        city = config.city(game, request.area)
         if city:
             maze = generate_maze(
                 city.width,
@@ -137,20 +142,31 @@ class RaceController:
                 branchiness=settings.branchiness,
             )
         racers = [
-            (spec, build_decider(spec, maze, settings.seed, self._config.qnn))
-            for spec in self._config.racers(profile)
+            (spec, build_decider(spec, maze, settings.seed, config.qnn))
+            for spec in config.racers(request.profile)
         ]
         self._humans = {spec.id: d for spec, d in racers if isinstance(d, HumanDecider)}
-        judge = _laya_judge(self._config) if any(s.rogue for s, _ in racers) else None
-        return RaceEngine(maze, racers, settings, self._hub.publish, judge, city=city)
+        judge = _laya_judge(config) if any(s.rogue for s, _ in racers) else None
+        maps = config.cities.get(game, [])
+        return RaceEngine(
+            maze,
+            racers,
+            settings,
+            self._hub.publish,
+            judge,
+            city=city,
+            game=game,
+            area=request.area % len(maps) if maps else 0,
+            areas=[m.title for m in maps],
+        )
 
-    async def preview(self, profile: str | None = None, seed: int | None = None) -> None:
-        """Show a profile's maze and racers on the attract screen without racing.
+    async def preview(self, request: RaceRequest | None = None) -> None:
+        """Show a game's maze and racers on the attract screen without racing.
 
         Also how a race is stopped from the UI: the running race is cancelled and the
         same maze (``seed``) is shown again, ready for a restart.
         """
-        engine = self._build_engine(seed=seed, profile=profile)
+        engine = self._build_engine(request or RaceRequest())
         await self.stop()
         self._hub.reset()
         engine.announce(preview=True)
@@ -160,16 +176,16 @@ class RaceController:
         human = self._humans.get(racer_id)
         return bool(human and human.submit(move))
 
-    async def start(self, seed: int | None = None, profile: str | None = None) -> str:
+    async def start(self, request: RaceRequest) -> str:
         """Stop any running race and start a new one.
 
         Returns:
             The new race id.
 
         Raises:
-            ConfigError: If the profile or a racer runtime is invalid.
+            ConfigError: If the game, profile or a racer runtime is invalid.
         """
-        engine = self._build_engine(seed, profile)  # validate config before stopping
+        engine = self._build_engine(request)  # validate config before stopping
         await self.stop()
         self._hub.reset()
         self._task = asyncio.create_task(engine.run(), name=f"race-{engine.race_id}")
@@ -208,23 +224,31 @@ def create_app(config: AppConfig) -> Starlette:
         return EventSourceResponse(stream(), ping=SSE_PING_S)
 
     async def start_race(request: Request) -> JSONResponse:
-        body = await _json_body(request)
         try:
-            race_id = await controller.start(seed=body.get("seed"), profile=body.get("profile"))
-        except ConfigError as exc:
+            race_id = await controller.start(await _race_request(request))
+        except (ConfigError, ValidationError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"race_id": race_id})
 
     async def preview_race(request: Request) -> JSONResponse:
-        body = await _json_body(request)
         try:
-            await controller.preview(
-                profile=body.get("profile"),  # type: ignore[arg-type]
-                seed=body.get("seed"),  # type: ignore[arg-type]
-            )
-        except ConfigError as exc:
+            await controller.preview(await _race_request(request))
+        except (ConfigError, ValidationError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"ok": True})
+
+    async def games(_: Request) -> JSONResponse:
+        """The hub's game list: titles, taglines and each game's map titles."""
+        return JSONResponse(
+            {
+                name: {
+                    "title": game.title,
+                    "tagline": game.tagline,
+                    "areas": [city.title for city in config.cities.get(name, [])],
+                }
+                for name, game in config.games.items()
+            }
+        )
 
     async def human_move(request: Request) -> JSONResponse:
         body = await _json_body(request)
@@ -249,6 +273,7 @@ def create_app(config: AppConfig) -> Starlette:
         Route("/api/race/preview", preview_race, methods=["POST"]),
         Route("/api/human/move", human_move, methods=["POST"]),
         Route("/api/health", health),
+        Route("/api/games", games),
         Mount(
             "/api/tiles",
             StaticFiles(directory=MAPS_DIR / "tiles", check_dir=False),
@@ -305,6 +330,19 @@ def _laya_judge(config: AppConfig) -> CheatJudge | None:
         return await asyncio.to_thread(bridge.noul, state, question)
 
     return judge
+
+
+class RaceRequest(BaseModel):
+    """Body of ``/api/race/start`` and ``/api/race/preview`` (every field optional)."""
+
+    profile: str | None = None
+    seed: int | None = None
+    game: str | None = None
+    area: int = Field(default=0, ge=0)
+
+
+async def _race_request(request: Request) -> RaceRequest:
+    return RaceRequest.model_validate(await _json_body(request))
 
 
 async def _json_body(request: Request) -> dict[str, object]:

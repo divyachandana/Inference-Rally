@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from inference_rally.deciders import (
     Decider,
@@ -22,10 +22,11 @@ from inference_rally.deciders import (
 from inference_rally.errors import ConfigError
 from inference_rally.laya import LayaSettings
 from inference_rally.maze import Maze
-from inference_rally.models import CityMap, RacerSpec, RaceSettings
+from inference_rally.models import CityMap, GameSpec, RacerSpec, RaceSettings
 from inference_rally.qnn_host import QnnHostSettings, get_host
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "racers.yaml"
+DEFAULT_GAME = "rally"  # the hedge-maze game; also what a request without a game gets
 
 
 class AppConfig(BaseModel):
@@ -36,7 +37,11 @@ class AppConfig(BaseModel):
     laya: LayaSettings | None = None
     active_profile: str
     profiles: dict[str, list[RacerSpec]]
-    city: CityMap | None = None  # loaded from ``race.street_map``, not written in the YAML
+    games: dict[str, GameSpec] = Field(
+        default_factory=lambda: {DEFAULT_GAME: GameSpec(title="Inference Rally")}
+    )
+    # Street maps loaded from each game's ``maps``, not written in the YAML.
+    cities: dict[str, list[CityMap]] = Field(default_factory=dict, exclude=True)
 
     def racers(self, profile: str | None = None) -> list[RacerSpec]:
         """Racer specs for ``profile`` (default: the active one)."""
@@ -44,6 +49,22 @@ class AppConfig(BaseModel):
         if name not in self.profiles:
             raise ConfigError(f"Unknown profile {name!r}; choose from {sorted(self.profiles)}")
         return self.profiles[name]
+
+    def game(self, name: str | None) -> str:
+        """``name`` if it is a known game, else the default one.
+
+        Raises:
+            ConfigError: If ``name`` is not a game in ``racers.yaml``.
+        """
+        game = name or DEFAULT_GAME
+        if game not in self.games:
+            raise ConfigError(f"Unknown game {game!r}; choose from {sorted(self.games)}")
+        return game
+
+    def city(self, game: str, area: int) -> CityMap | None:
+        """The street map of ``game``'s ``area`` (wrapping around), or None for a hedge maze."""
+        maps = self.cities.get(game, [])
+        return maps[area % len(maps)] if maps else None
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
@@ -59,8 +80,10 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         raise ConfigError(f"Config file not found: {path}") from exc
     except (yaml.YAMLError, ValidationError) as exc:
         raise ConfigError(f"Invalid config {path}: {exc}") from exc
-    if config.race.street_map:
-        config.city = load_city(path.parent / config.race.street_map)
+    config.cities = {
+        name: [load_city(path.parent / street_map) for street_map in game.maps]
+        for name, game in config.games.items()
+    }
     return config
 
 

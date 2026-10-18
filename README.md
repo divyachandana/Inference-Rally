@@ -1,14 +1,29 @@
-# Inference Rally
+# Inference Rally — Game Hub
 
-> On-device AI models race taxis through real San Francisco streets. Every turn is a decision; every second is compute.
+> On-device AI models race taxis, live on the Snapdragon NPU. Every turn is a decision; every second is compute.
 
 ExecuTorch Hackathon — Compute Track (Copilot+ PC, Snapdragon X Elite).
-Each racer is the same (or a different) model on a different compute unit — **NPU vs GPU**.
-At every junction the model is asked *left, right or straight?* and its car **waits while it thinks**,
-so faster on-device inference visibly wins.
+Every racer is a real model on the NPU (ExecuTorch + QNN): **Gemma-4-E2B** and **Qwen3-1.7B**,
+plus **Laya** deciding a rogue's cheats. At every junction a model is asked *left, right or
+straight?* and its car **waits while it thinks**, so faster on-device inference visibly wins.
 
-See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
+See **[docs/PLAN.md](docs/PLAN.md)** for the design and architecture, and
 **[docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md)** for coding rules.
+
+## The game hub
+
+Open <http://localhost:8000> and pick a game (click it, or press **1** / **2**):
+
+| Game | Track |
+|---|---|
+| **Inference Rally** | A random hedge maze, new every race |
+| **San Francisco** | Real San Francisco streets from OpenStreetMap: North Beach, Alamo Square or the Mission (**MAP** button / **A** cycles them) |
+
+Both games are the same race: same racers, NPU models, DEMO / PLAY / UNFAIR modes, cheats and
+controls (`games:` in `racers.yaml`). **◀ HUB** (or **H**) goes back to the hub. The server runs
+one race at a time, so opening a game takes the track over from the other one.
+
+![The game hub: Inference Rally and San Francisco](docs/images/hub.jpg)
 
 ## Demo video
 
@@ -18,26 +33,30 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 ## Screenshots
 
-![DEMO mode: Gemma-4-E2B and Qwen3-1.7B, both on the NPU, racing through the maze, with the live map, standings and decision feed](docs/images/demo-race.jpg)
+![San Francisco: Gemma-4-E2B and Qwen3-1.7B on the NPU racing through North Beach, with the live street map](docs/images/sf-race.jpg)
+
+![Inference Rally DEMO mode: Gemma-4-E2B and Qwen3-1.7B, both on the NPU, racing through the maze, with the live map, standings and decision feed](docs/images/demo-race.jpg)
 
 | UNFAIR mode: the rogue's drone scouts a junction | Race results |
 |---|---|
 | ![UNFAIR mode drone peek](docs/images/unfair-drone.jpg) | ![Results screen](docs/images/results.jpg) |
 
-## The map: real San Francisco streets
+## San Francisco: real streets
 
-The race runs on real streets from [OpenStreetMap](https://www.openstreetmap.org): by default North
-Beach, Jones St to Kearny St and Vallejo St to Chestnut St. Each race closes some of them with
-barricades, so it is still a maze (`N` closes a different set). Buildings take their block's real
-height, parks are parks, the junction banner shows the real cross streets, and the Golden Gate
-Bridge, Transamerica Pyramid, Salesforce Tower, Coit Tower, Alcatraz and the downtown skyline stand
-in their real directions. The map panel is the real OpenStreetMap street map, with each car's
-dot and trail, the best route and the closed streets on it (`4` shows it full screen). The driving
-views show the same real map like a navigation app: streets with their names, parks and grey
-buildings at their real heights, drawn from OpenStreetMap data. Add `?view=city` to the page
-address for the pixel-art city instead.
+The San Francisco game races on real streets from [OpenStreetMap](https://www.openstreetmap.org)
+(by [@Ashwini S](https://github.com/divyachandana/Inference-Rally/pull/1)): by default North Beach,
+Jones St to Kearny St and Vallejo St to Chestnut St. Each race closes some of them with barricades,
+so it is still a maze (`N` closes a different set). Buildings take their block's real height, parks
+are parks, the junction banner shows the real cross streets, and the Golden Gate Bridge,
+Transamerica Pyramid, Salesforce Tower, Coit Tower, Alcatraz and the downtown skyline stand in their
+real directions. The map panel is the real OpenStreetMap street map, with each car's dot and trail,
+the best route and the closed streets on it (`4` shows it full screen). The driving views show the
+same real map like a navigation app: streets with their names, parks and grey buildings at their
+real heights. Add `&view=city` to the page address for the pixel-art city instead. In UNFAIR mode
+the rogue's hedge jump hops over a city block.
 
-Change the area with one command, then point `street_map` in `racers.yaml` at the new file:
+Add another area with one command, then list the new file under `games: sf: maps:` in
+`racers.yaml`:
 
 ```bash
 python scripts/fetch_map.py sf-alamo-square    # ready: sf-north-beach, sf-alamo-square, sf-mission
@@ -45,9 +64,8 @@ python scripts/fetch_map.py my-area --bbox 37.79,-122.42,37.80,-122.40 --title "
 ```
 
 Any area with a street grid works; the script keeps the 7 x 7 junctions nearest its middle
-(`--size` changes that). `loop_ratio: 1` in `racers.yaml` keeps every real street open; removing
-`street_map` brings back the random grid. Map data © OpenStreetMap contributors, under the
-[Open Database License](https://opendatacommons.org/licenses/odbl/).
+(`--size` changes that). `loop_ratio: 1` in `racers.yaml` keeps every real street open. Map data
+© OpenStreetMap contributors, under the [Open Database License](https://opendatacommons.org/licenses/odbl/).
 
 ## Three modes
 
@@ -135,7 +153,7 @@ cd frontend; npm install; npm run build; cd ..
 .venv\Scripts\python -m inference_rally.server
 ```
 
-Open <http://localhost:8000> and press **Enter**. For frontend work with hot reload, run
+Open <http://localhost:8000>, pick a game, and press **Enter**. For frontend work with hot reload, run
 `.\scripts\dev.ps1` instead (server on :8000, Vite UI on <http://localhost:5173>).
 
 In PLAY mode the overview map is locked until you finish — like the models, you only know where the
@@ -169,6 +187,8 @@ folder (next to its `qnn_executorch_backend.dll`).
 | S | Stop the race (back to the title screen, same maze) |
 | N | New random maze |
 | G | Switch DEMO / PLAY / UNFAIR |
+| A | Next map area (San Francisco) |
+| H | Back to the game hub |
 | ← ↑ → | Drive at a junction (PLAY): left / straight / right |
 | ↓ | U-turn (PLAY) |
 | M | Sound on/off |
@@ -186,12 +206,12 @@ folder (next to its `qnn_executorch_backend.dll`).
   - `city_map.py` OpenStreetMap data → real street grid, block heights and parks, skyline
   - `prompts.py` junction prompt + reply parsing · `metrics.py` TTFT / tokens/sec timing
   - `models.py` typed config + event schema · `server.py` Starlette + Server-Sent Events
-- `frontend/` – Three.js split-screen game (Vite)
+- `frontend/` – Vite app with two pages: the game hub (`index.html`, `src/hub/`) and the Three.js split-screen game (`play.html?game=rally|sf`)
   - `world/` maze, city blocks, bay area and landmarks (placed by latitude/longitude), procedural pixel textures · `cars/` car model, driving, option arrows
   - `render/` split-screen viewports, overview map · `hud/` HUD, leaderboard, overlays · `audio/` chiptune synth
-- `racers.yaml` – race settings, NPU bundle and models (`qnn:`) and racer profiles (`demo`, `play`, `sim`)
+- `racers.yaml` – race settings, the hub's games and their maps (`games:`), NPU bundle and models (`qnn:`), Laya (`laya:`) and racer profiles (`demo`, `play`, `unfair`, `sim`)
 - `tests/` – pytest suite (game logic runs offline with simulated racers)
-- `scripts/` – `dev.ps1` (Windows) / `dev.sh` run server + UI
+- `scripts/` – `dev.ps1` (Windows) / `dev.sh` run server + UI · `fetch_map.py` downloads an area from OpenStreetMap · `laya_bridge.py` runs Laya
 - `maps/` – made by `scripts/fetch_map.py`: street maps (`<area>.json`), map pictures (`tiles/`), drawn-map data (`features/`); `areas.yaml` names the ready areas
 - `docs/` – plan, architecture, coding standards
 

@@ -35,7 +35,7 @@ export class EventStream {
 
 /**
  * Ask the server to start a new race.
- * @param {{seed?: number, profile?: string}} [options]
+ * @param {{seed?: number, profile?: string, game?: string, area?: number}} [options]
  * @returns {Promise<{race_id?: string, error?: string}>}
  */
 export async function startRace(options = {}) {
@@ -48,15 +48,16 @@ export async function startRace(options = {}) {
 }
 
 /**
- * Show a profile's maze and racers on the attract screen (stops a running race).
- * @param {string} profile
- * @param {number} [seed] Maze to show; the profile's default maze if omitted.
+ * Show a game's maze and racers on the attract screen (stops a running race).
+ * @param {{profile?: string, seed?: number|null, game?: string, area?: number}} [options]
+ *   ``seed`` null or omitted: the game's default maze.
  */
-export async function previewRace(profile, seed) {
+export async function previewRace(options = {}) {
+  const body = Object.fromEntries(Object.entries(options).filter(([, value]) => value != null));
   const response = await fetch('/api/race/preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(seed == null ? { profile } : { profile, seed }),
+    body: JSON.stringify(body),
   });
   return response.json();
 }

@@ -3,34 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Inference Rally</title>
+    <title>Game Hub · On-device AI arcade</title>
   </head>
-  <body>
-    <header class="topbar">
-      <div class="logo">INFERENCE <span>RALLY</span></div>
-      <div id="matchup" class="matchup">GEMMA NPU VS QWEN3 NPU</div>
-      <div class="spacer"></div>
-      <div id="timer" class="timer">00:00.0</div>
-      <button id="btn-start" title="Enter">START</button>
-      <button id="btn-stop" title="S">STOP</button>
-      <button id="btn-new" title="N">NEW MAZE</button>
-      <button id="btn-mode" title="G">MODE: DEMO</button>
-      <button id="btn-sound" title="M">SOUND ON</button>
-      <button id="btn-retro" title="P">RETRO ON</button>
-      <div id="status" class="status">OFFLINE</div>
+  <body class="hub">
+    <header class="hub-header">
+      <div class="hub-logo">GAME <span>HUB</span></div>
+      <p class="hub-sub">ON-DEVICE AI GAMES · LIVE ON THE SNAPDRAGON NPU</p>
     </header>
 
-    <main class="stage">
-      <canvas id="scene"></canvas>
-      <div class="panes">
-        <section class="pane" data-state="ready"></section>
-        <section class="pane" data-state="ready"></section>
-        <section class="pane" data-state="ready"></section>
-        <section class="pane overview" data-state="overview"></section>
-      </div>
-      <div id="overlay" class="overlay hidden"></div>
+    <main class="hub-games" id="games">
+      <a class="hub-card" href="/play.html?game=rally" data-game="rally" style="--accent: #1d9e75">
+        <img src="/hub/rally.jpg" alt="Inference Rally: two AI taxis racing through a hedge maze" />
+        <div class="hub-card-body">
+          <div class="hub-key">1</div>
+          <h2>INFERENCE RALLY</h2>
+          <p class="hub-tagline">AI models race taxis through a hedge maze</p>
+          <p class="hub-detail">Random maze every race · DEMO · PLAY · UNFAIR</p>
+        </div>
+      </a>
+      <a class="hub-card" href="/play.html?game=sf" data-game="sf" style="--accent: #3fa7d6">
+        <img src="/hub/sf.jpg" alt="San Francisco: AI taxis racing on real North Beach streets" />
+        <div class="hub-card-body">
+          <div class="hub-key">2</div>
+          <h2>SAN FRANCISCO</h2>
+          <p class="hub-tagline">The same race on real San Francisco streets</p>
+          <p class="hub-detail">North Beach · Alamo Square · Mission</p>
+        </div>
+      </a>
     </main>
 
-    <script type="module" src="/src/main.js"></script>
+    <footer class="hub-footer">
+      <p>Every racer is a real model on the NPU: <b>Gemma-4-E2B</b> · <b>Qwen3-1.7B</b> · <b>Laya</b> decides the rogue's cheats</p>
+      <p class="hub-hint">PRESS 1 OR 2 · OR CLICK A GAME</p>
+    </footer>
+
+    <script type="module" src="/src/hub/hub.js"></script>
   </body>
 </html>
