@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from features import vector
+from notify import FANOUT_GAP_S, MAX_REAL_PER_FANOUT, PREFIX, Notifier
 
 NIGHT_START, NIGHT_END = 21, 5   # default night band, matches the care records (21:00-05:00); configurable
 HISTORY_EVERY_S = 5              # resident history sample period (360 samples = 30 min)
@@ -106,6 +107,8 @@ class Alert:
     went_outside: bool = False
     record: dict[str, object] | None = None
     simulated: bool = False         # raised by the presenter's simulated camera, not a real sensor
+    notifications: list[dict[str, object]] = field(default_factory=list)   # contact fan-out, one per contact+channel
+    last_fanout: float = 0.0        # real time of the last fan-out (one per alert per 60 s)
 
 
 class Engine:
@@ -128,6 +131,7 @@ class Engine:
         self._autosave_stop = threading.Event()
         self._autosave: threading.Thread | None = None
         self._simulating = False                  # True while a simulated camera frame is being handled
+        self.notifier: Notifier | None = None     # contact fan-out (calls/SMS); the server sets it up
         self.reset()
 
     # ------------------------------------------------------------------ clock and setup
@@ -270,8 +274,7 @@ class Engine:
     def _outside(self, r: Resident, exit_id: str) -> None:
         ex = self.exits.get(exit_id)
         label = ex.label if ex else exit_id
-        a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c:g} °C", r, ex, force=True)
-        a.went_outside = True
+        self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c:g} °C", r, ex, force=True, outside=True)
 
     def camera_active(self, cam_id: str) -> tuple[bool, str]:
         """Should frames from this camera be analysed right now? (False = drop them unseen.)"""
@@ -375,7 +378,8 @@ class Engine:
                 return a
         return None
 
-    def _raise(self, level: int, title: str, r: Resident | None, ex: Exit | None, force: bool = False) -> Alert:
+    def _raise(self, level: int, title: str, r: Resident | None, ex: Exit | None, force: bool = False,
+               outside: bool = False) -> Alert:
         if self._simulating:
             title += " (simulated camera)"   # stays in the title and history after the radar tag is gone
         a = self._open_alert_for(r, ex)
@@ -393,6 +397,8 @@ class Engine:
             if ex and not a.exit:
                 a.exit = ex.id
             self._set_level(a, max(level, a.level), title)
+        if outside:
+            a.went_outside = True   # before the contact fan-out, so the message says so
         if a.level == 3 and a.contact_step == 0:
             self._contact(a)
         return a
@@ -417,8 +423,101 @@ class Engine:
         if a.contact_step < len(steps):
             a.history.append((self.stamp(), steps[a.contact_step]))
             self.log("contact", f"Alert #{a.id}: {steps[a.contact_step]}")
+            if a.contact_step == 0 and not a.notifications:
+                self._fanout(a, "NightWatch (emergency level reached)")
             a.contact_step += 1
             a.level_since = time.time()
+
+    # ------------------------------------------------------------------ contact fan-out (calls / SMS)
+
+    def notify(self, alert_id: int, by: str) -> dict[str, object]:
+        """Staff pressed "Call for help": tell the contact list about this alert now."""
+        with self.lock:
+            a, err = self._open_alert(alert_id)
+            if a is None:
+                return err  # type: ignore[return-value]
+            if self.notifier is None:
+                return {"error": "contacts are not set up on this server"}
+            wait = FANOUT_GAP_S - (time.time() - a.last_fanout)
+            if wait > 0:
+                return {"error": f"contacts were already notified for alert #{a.id}; try again in {int(wait) + 1} s"}
+            return {"ok": True, **self._fanout(a, by[:40] or "Staff")}
+
+    def _notify_text(self, a: Alert) -> str:
+        """What contacts hear/read: alert facts only. Never video, never health readings."""
+        r = self.residents.get(a.resident or "")
+        ex = self.exits.get(a.exit or "")
+        level = {1: "Heads-up", 2: "Urgent", 3: "Emergency"}.get(a.level, "Alert")
+        if r:
+            who = r.name if r.id in r.name else f"{r.name} ({r.id})"
+            where = ("is outside the building" + (f", via the {ex.label.lower()}" if ex else "")) if a.went_outside \
+                else f"is near the {ex.label.lower()}" if ex else f"is out of their room (room {r.room})"
+            what = f"{who} {where}."
+        else:
+            what = f"{ex.label} opened." if ex else "An alert needs a response."
+        temp = f" Outside temperature {self.outside_temp_c:g} degrees C." if a.went_outside else ""
+        return (f"{PREFIX} {level} alert, level {a.level} of 3, at {self.facility}. {what}{temp} "
+                f"Time {self.clock():%H:%M}. Night staff phones have been alerted.")
+
+    def _fanout(self, a: Alert, by: str) -> dict[str, object]:
+        """Tell each contact: real call/SMS only when live, configured and within the limits; else simulated.
+        Network sends run in background threads and report back into the alert's history."""
+        n = self.notifier
+        if n is None:
+            return {"notified": 0, "real": 0}
+        a.last_fanout = time.time()
+        text = self._notify_text(a)
+        a.history.append((self.stamp(), f"Contacting the call list ({by})" + ("" if n.live else ": dry run, live calls are off")))
+        real = 0
+        for c in n.contacts_for(a.resident):
+            name, role = str(c["name"]), str(c["role"])
+            channels = ["call", "sms"] if c["channel"] == "call+sms" else [str(c["channel"])]
+            if role == "emergency_services":
+                channels = [channels[0]]
+            for ch in channels:
+                entry: dict[str, object] = {"contact_id": c["id"], "role": role, "name": name, "channel": ch,
+                                            "status": "queued", "detail": "", "at": self.stamp()}
+                a.notifications.append(entry)
+                if role == "emergency_services":
+                    entry.update(status="simulated", detail="would be called per facility policy (simulated)")
+                    self._contact_line(a, f"{name}: would be called per facility policy (simulated)")
+                    continue
+                reason = ("simulated contact" if ch == "simulated"
+                          else "simulated camera alert" if a.simulated
+                          else "dry run, live calls are off" if not n.live
+                          else "no phone number" if not c["phone"]
+                          else f"limit of {MAX_REAL_PER_FANOUT} real calls/SMS per alert" if real >= MAX_REAL_PER_FANOUT
+                          else "Twilio not configured" if not n.configured()
+                          else "hourly limit reached" if not n.take_budget() else None)
+                if reason:
+                    entry.update(status="simulated", detail=reason)
+                    self._contact_line(a, f"{name}: would {'call' if ch != 'sms' else 'text'} (simulated: {reason})")
+                    continue
+                real += 1
+                entry["status"] = "calling" if ch == "call" else "queued"
+                threading.Thread(target=self._send, args=(n, a, entry, ch, str(c["phone"]), name, text),
+                                 daemon=True, name=f"notify-{a.id}-{c['id']}").start()
+        self.bump()
+        return {"notified": len(a.notifications), "real": real}
+
+    def _send(self, n: Notifier, a: Alert, entry: dict[str, object], ch: str, phone: str, name: str, text: str) -> None:
+        status, detail = n.send(ch, phone, text)   # network, no locks held
+        with self.lock:
+            entry.update(status=status, detail=detail, at=self.stamp())
+            if status == "calling":
+                line = f"Calling {name} … ringing"
+            elif status == "sent":
+                line = f"SMS to {name} sent"
+            elif status == "simulated":
+                line = f"{name}: not reached ({detail})"
+            else:
+                line = f"{'Call' if ch == 'call' else 'SMS'} to {name} failed: {detail}"
+            self._contact_line(a, line)
+            self.bump()
+
+    def _contact_line(self, a: Alert, line: str) -> None:
+        a.history.append((self.stamp(), line))
+        self.log("contact", f"Alert #{a.id}: {line}")
 
     def _open_alert(self, alert_id: int) -> tuple[Alert | None, dict[str, object] | None]:
         a = next((x for x in self.alerts if x.id == alert_id), None)
@@ -647,6 +746,8 @@ class Engine:
                            "p50_ms": round(lat[len(lat) // 2], 3) if lat else None,
                            "p95_ms": round(lat[int(len(lat) * 0.95)], 3) if lat else None},
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
+                "contacts_live": bool(self.notifier and self.notifier.live),
+                "twilio_configured": bool(self.notifier and self.notifier.configured()),
                 "night_hours": [self.night_start, self.night_end],
                 "taxonomy": TAXONOMY,
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
@@ -724,7 +825,8 @@ class Engine:
                 "description": r.description if r else None, "room": r.room if r else None,
                 "suggestions": r.suggestions()[:2] if r else [],
                 "max_level": a.max_level, "record": a.record, "backup_by": a.backup_by,
-                "created": a.created, "simulated": a.simulated}
+                "created": a.created, "simulated": a.simulated,
+                "notifications": [dict(x) for x in a.notifications]}
 
     # ------------------------------------------------------------------ surviving a restart
 

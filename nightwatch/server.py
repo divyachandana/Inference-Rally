@@ -46,6 +46,15 @@ API (JSON):
     POST /api/camera/config {"camera": "hall12", "line": [x1, y1, x2, y2] | null, "inside": 1 | -1}
                         or {"camera": "hall12", "enabled": true|false, "schedule": "always"|"night", "by": "..."}
     POST /api/scenario  {"name": "night_elopement" | "night_bathroom" | "day_visits" | "reset"}
+    GET  /api/contacts  {"live", "twilio_configured", "contacts": [{id, role, name, phone, channel, residents}],
+                        "roles", "channels", "limits"}; phones see numbers masked ("+1 •••• 4821")
+    POST /api/contacts  {"contacts": [...]} and/or {"live": true|false}   (laptop only; saved to git-ignored
+                        data/contacts.local.json; "live" is never saved: every start is a dry run)
+    POST /api/notify    {"alert": 3, "by": "..."}  "Call for help": fan out to the contact list now (once per 60 s
+                        per alert). Also automatic when an alert first reaches level 3. Results land in the
+                        alert's "notifications" [{contact_id, role, name, channel, status, detail, at}] and history.
+                        Real calls/SMS need TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM in the environment
+                        and live on; emergency services are always simulated. See nightwatch/notify.py.
 
 Errors: every error body is {"error": "<message staff can read>"} (plus e.g. "choices"). POST bodies must
 be a JSON object sent with Content-Type: application/json (415 otherwise), at most 64 KB (2 MB for
@@ -75,6 +84,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from engine import Engine  # noqa: E402
+from notify import Notifier  # noqa: E402
 from pairing import Pairing  # noqa: E402
 from scorer import build  # noqa: E402
 from vision.tracker import Tracker  # noqa: E402
@@ -166,6 +176,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(_checked(ENGINE.resident_detail(rid)))
         if url.path == "/api/settings":
             return self._json(ENGINE.settings())
+        if url.path == "/api/contacts":
+            return self._json(_notifier().view(PAIRING.is_local(self.client_address[0])))
         if url.path == "/api/health":
             return self._json(_health(PAIRING.is_local(self.client_address[0])))
         if url.path == "/api/state":
@@ -528,10 +540,38 @@ def r_camera_config(body: dict[str, object]) -> dict[str, object]:
     return _checked(_camera_config(clean))
 
 
-ROUTES = {"/api/sensor": r_sensor, "/api/ack": r_ack, "/api/resolve": r_resolve, "/api/clock": r_clock,
+def _notifier() -> Notifier:
+    if ENGINE.notifier is None:
+        raise ApiError(503, "contacts are not set up on this server")
+    return ENGINE.notifier
+
+
+def r_contacts(body: dict[str, object]) -> dict[str, object]:
+    n = _notifier()
+    live = v_bool(body, "live", required=False)
+    if "contacts" not in body and live is None:
+        raise ApiError(400, "send contacts and/or live")
+    try:
+        n.update(body.get("contacts") if "contacts" in body else None, live)
+    except ValueError as exc:
+        raise ApiError(400, str(exc)) from None
+    if "contacts" in body:
+        ENGINE.log("settings", f"Contact list saved ({len(n.contacts)} contacts)")
+    if live is not None:
+        ENGINE.log("settings", "Live contact calls/SMS turned " + ("ON (real calls and texts can go out)" if live else "OFF (dry run)")
+                   + " on the nurse-station laptop")
+    return n.view(local=True)
+
+
+def r_notify(body: dict[str, object]) -> dict[str, object]:
+    return _checked(ENGINE.notify(v_int(body, "alert"), v_by(body, "Staff")))  # type: ignore[arg-type]
+
+
+ROUTES = {"/api/contacts": r_contacts, "/api/notify": r_notify, "/api/sensor": r_sensor, "/api/ack": r_ack, "/api/resolve": r_resolve, "/api/clock": r_clock,
           "/api/frame": r_frame, "/api/camera/config": r_camera_config, "/api/scenario": r_scenario,
           "/api/record": r_record, "/api/bench/run": r_bench, "/api/backup": r_backup, "/api/settings": r_settings}
-LAPTOP_ONLY = {"/api/bench/run": "benchmarks can only be started on the laptop",
+LAPTOP_ONLY = {"/api/contacts": "the contact list can only be changed on the nurse-station laptop",
+               "/api/bench/run": "benchmarks can only be started on the laptop",
                "/api/settings": "settings can only be changed on the nurse-station laptop"}
 
 
@@ -805,6 +845,7 @@ def main() -> None:
     if facility == HERE / "demo" / "facility.json" and SETTINGS_FILE.exists():
         facility = SETTINGS_FILE   # settings edited on this laptop win over the demo file
     ENGINE = Engine(facility, build(args.model, args.device), args.l1_timeout, args.ack_timeout)
+    ENGINE.notifier = Notifier(HERE.parent / "data" / "contacts.local.json")
     ENGINE.on_log = lambda kind, text: LOG.info("engine", extra={"fields": {"kind": kind, "text": text}})
     LAN.update(on=args.lan, port=args.port)
     PAIRING = Pairing(HERE.parent / "logs" / "paired_devices.json", args.pin)
@@ -833,6 +874,8 @@ def main() -> None:
     threading.Thread(target=loop, daemon=True, name="tick").start()
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     print(f"Scorer: {ENGINE.scorer.name} on {ENGINE.scorer.device}")  # type: ignore[attr-defined]
+    print(f"Contacts: {len(ENGINE.notifier.contacts)} (dry run until turned on at /api/contacts; Twilio "
+          f"{'configured' if ENGINE.notifier.configured() else 'not configured: calls/SMS are simulated'})")
     print(f"Dashboard http://localhost:{args.port}/dashboard/   Staff http://localhost:{args.port}/staff/   "
           f"Simulator http://localhost:{args.port}/sim/   Camera http://localhost:{args.port}/camera/")
     if args.lan:
