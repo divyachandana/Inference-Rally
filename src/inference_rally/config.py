@@ -1,7 +1,7 @@
 """Load ``racers.yaml`` and build the racers for the active profile.
 
-Profiles let the same code run with simulated racers (UI work), local Mac models,
-or Snapdragon NPU/GPU/CPU models — switching is a one-line config change.
+Profiles mix models on the Snapdragon NPU (``runtime: qnn``), simulated racers and the
+human player — switching is a one-line config change.
 """
 
 from __future__ import annotations
@@ -12,10 +12,18 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from inference_rally.deciders import Decider, HumanDecider, OpenAIDecider, SimulatedDecider
-from inference_rally.errors import ConfigError, DeciderError
+from inference_rally.deciders import (
+    Decider,
+    HumanDecider,
+    PromptBudget,
+    QnnDecider,
+    SimulatedDecider,
+)
+from inference_rally.errors import ConfigError
+from inference_rally.laya import LayaSettings
 from inference_rally.maze import Maze
 from inference_rally.models import CityMap, RacerSpec, RaceSettings
+from inference_rally.qnn_host import QnnHostSettings, get_host
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "racers.yaml"
 
@@ -24,6 +32,8 @@ class AppConfig(BaseModel):
     """Parsed ``racers.yaml``."""
 
     race: RaceSettings
+    qnn: QnnHostSettings | None = None
+    laya: LayaSettings | None = None
     active_profile: str
     profiles: dict[str, list[RacerSpec]]
     city: CityMap | None = None  # loaded from ``race.street_map``, not written in the YAML
@@ -70,13 +80,16 @@ def load_city(path: Path) -> CityMap:
         raise ConfigError(f"Invalid street map {path}: {exc}") from exc
 
 
-def build_decider(spec: RacerSpec, maze: Maze, seed: int) -> Decider:
+def build_decider(
+    spec: RacerSpec, maze: Maze, seed: int, qnn: QnnHostSettings | None = None
+) -> Decider:
     """Create the decider that will drive ``spec``'s car.
 
     Args:
         spec: Racer definition from the config.
         maze: Current track (simulated racers use it to judge moves).
         seed: Race seed; combined with the racer id so racers behave independently.
+        qnn: NPU host settings, required for ``runtime: qnn`` racers.
 
     Raises:
         ConfigError: If the racer's runtime is not available yet or misconfigured.
@@ -87,7 +100,16 @@ def build_decider(spec: RacerSpec, maze: Maze, seed: int) -> Decider:
         return SimulatedDecider(spec.sim, maze, random.Random(f"{seed}:{spec.id}"))
     if spec.runtime == "human":
         return HumanDecider()
-    try:
-        return OpenAIDecider(spec)
-    except DeciderError as exc:
-        raise ConfigError(str(exc)) from exc
+    key = spec.qnn_model
+    if qnn is None or key is None or key not in qnn.models:
+        raise ConfigError(
+            f"Racer {spec.id!r} runs on the NPU: set 'qnn_model' to a 'qnn.models' key"
+        )
+    model = qnn.models[key]
+    if key not in _budgets:
+        _budgets[key] = PromptBudget(model.max_seq_len)
+    return QnnDecider(spec, get_host(qnn, key), _budgets[key], model.prompt_suffix)
+
+
+# Prompt-size estimates learned per host, kept across races like the host itself.
+_budgets: dict[str, PromptBudget] = {}

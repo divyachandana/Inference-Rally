@@ -97,6 +97,12 @@ body {
   border-color: var(--red);
 }
 
+#btn-mode.unfair {
+  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+}
+
 #btn-mode.play {
   color: #0b0d12;
   background: var(--yellow);
@@ -148,6 +154,15 @@ body {
 
 .panes.focused {
   grid-template: 1fr / 1fr;
+}
+
+/* Two racers: both cars on top, the map + standings across the bottom row. */
+.panes.duo:not(.focused) .overview {
+  grid-column: 1 / -1;
+}
+
+.pane.unused {
+  display: none;
 }
 
 /* Subtle CRT scanlines in retro mode. */
@@ -515,6 +530,14 @@ body {
   color: #ff8a7a;
 }
 
+.feed-line.cheat span {
+  color: var(--red);
+}
+
+.feed-line.cheat.declined span {
+  color: #8a929c;
+}
+
 .map-lock {
   position: absolute;
   top: 0;
@@ -650,13 +673,6 @@ body {
 
 .overlay.podium {
   background: rgba(8, 10, 14, 0.9);
-}
-
-.podium-insight {
-  font-size: 11px;
-  color: var(--yellow);
-  padding: 10px 14px;
-  border: 3px solid var(--yellow);
 }
 
 .podium-winner {

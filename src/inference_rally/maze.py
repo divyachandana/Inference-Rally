@@ -127,6 +127,19 @@ class Maze:
                 result[move] = neighbor
         return result
 
+    def hedge_neighbors(self, node: Node) -> list[Node]:
+        """Adjacent junctions with a hedge (no road) in between: where a rogue can jump.
+
+        Only junctions on the track: a real street map has corners no road reaches.
+        """
+        x, y = node
+        return [
+            (x + dx, y + dy)
+            for dx, dy in _VECTORS.values()
+            if (x + dx, y + dy) in self._distance_to_exit
+            and not self.graph.has_edge(node, (x + dx, y + dy))
+        ]
+
     def distance_to_exit(self, node: Node) -> int:
         """Number of road segments on the shortest route from ``node`` to the exit."""
         return self._distance_to_exit[node]

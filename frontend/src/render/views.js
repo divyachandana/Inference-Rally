@@ -136,8 +136,9 @@ export class SplitViews {
       // When squeezed close, look from higher up so the car stays in view.
       const squeeze = 1 - back / rig.back;
       const rise = (car.thinking ? rig.thinkingRise : 0) + squeeze * 2.5;
-      const desired = origin.clone().addScaledVector(forward, -back).setY(rig.height + rise);
-      const target = origin.clone().addScaledVector(forward, rig.lookAhead).setY(1.2);
+      // Rise with the car during a rogue's hedge jump, so it stays in frame mid-air.
+      const desired = origin.clone().addScaledVector(forward, -back).setY(rig.height + rise + car.hop);
+      const target = origin.clone().addScaledVector(forward, rig.lookAhead).setY(1.2 + car.hop);
 
       if (!camera.userData.initialized) {
         camera.position.copy(desired);

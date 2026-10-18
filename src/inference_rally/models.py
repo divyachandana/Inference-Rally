@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from inference_rally.maze import Heading, Move
 
-Device = Literal["NPU", "GPU", "CPU", "HUMAN"]
-Runtime = Literal["simulated", "openai", "human"]
+Device = Literal["NPU", "GPU", "HUMAN"]
+Runtime = Literal["simulated", "qnn", "human"]
 GridPoint = tuple[int, int]
 
 
@@ -32,8 +32,26 @@ class SimProfile(BaseModel):
     reply_tokens: tuple[int, int] = Field(default=(22, 34), description="Token count range")
 
 
+class RogueSpec(BaseModel):
+    """A racer allowed to cheat (UNFAIR mode); Laya decides when."""
+
+    model_config = ConfigDict(frozen=True)
+
+    jumps: int = Field(default=3, ge=0, description="Hedge jumps per race")
+    drones: int = Field(default=2, ge=0, description="Drone peeks per race")
+    threshold: float = Field(default=0.4, ge=0, le=1, description="Laya yes-probability to jump")
+    # Laya's drone answers run lower than its jump answers (about 0.17 when slightly unsure up
+    # to 0.54 when lost with the rival close), so the drone gets its own, lower bar.
+    drone_threshold: float = Field(default=0.15, ge=0, le=1, description="... to fly the drone")
+    jump_penalty_s: float = Field(default=1.5, ge=0, description="Extra time to hop a hedge")
+    drone_time_s: float = Field(default=2.0, ge=0, description="Time to fly the drone")
+    min_jump_gain: int = Field(
+        default=2, ge=1, description="Only offer jumps saving this many blocks"
+    )
+
+
 class RacerSpec(BaseModel):
-    """One racer: a model running on one compute unit behind one endpoint."""
+    """One racer: a model on one compute unit, a simulated model, or the human player."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -43,10 +61,10 @@ class RacerSpec(BaseModel):
     runtime: Runtime
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     label: str | None = Field(default=None, max_length=10, description="Short tag, e.g. '1B GPU'")
-    base_url: str | None = None
-    model: str | None = None
+    qnn_model: str | None = Field(default=None, description="Key in qnn.models (runtime: qnn)")
     max_tokens: int = Field(default=48, ge=8, le=512, description="Reply cap for real models")
     sim: SimProfile | None = None
+    rogue: RogueSpec | None = None
 
     @property
     def display_label(self) -> str:
@@ -189,6 +207,7 @@ class RacerStats(BaseModel):
     wrong_turns: int = 0
     invalid_moves: int = 0
     dead_ends: int = 0
+    cheats: int = 0
     tokens_total: int = 0
     segments_driven: int = 0
     avg_tps: float = 0.0
@@ -239,6 +258,7 @@ class RacerView(BaseModel):
     runtime: Runtime
     color: str
     heading: Heading
+    rogue: bool = Field(default=False, description="Allowed to cheat (UNFAIR mode)")
 
 
 class RaceInitEvent(_Event):
@@ -294,6 +314,21 @@ class DriveEvent(_Event):
     heading: Heading
     duration_s: float
     progress: float = Field(ge=0, le=1, description="1 = at the exit")
+    jump: bool = Field(default=False, description="Hopped a hedge instead of driving a road")
+
+
+class CheatEvent(_Event):
+    """The rogue asked Laya about a cheat; ``used`` says whether it took it."""
+
+    type: Literal["cheat"] = "cheat"
+    racer: str
+    kind: Literal["jump", "drone"]
+    probability: float = Field(ge=0, le=1, description="Laya's yes-probability")
+    used: bool
+    laya_ms: float
+    jumps_left: int
+    drones_left: int
+    stats: RacerStats
 
 
 class IncidentEvent(_Event):
@@ -324,6 +359,7 @@ RaceEvent = Annotated[
     | TokenEvent
     | DecisionEvent
     | DriveEvent
+    | CheatEvent
     | IncidentEvent
     | FinishEvent
     | RaceEndEvent,

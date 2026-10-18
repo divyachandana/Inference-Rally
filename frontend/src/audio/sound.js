@@ -114,6 +114,12 @@ export class Sound {
     this.tone({ freq: good ? base * 1.5 : base * 0.75, duration: 0.14, type: 'triangle', volume: 0.45, delay: 0.08 });
   }
 
+  /** A rogue cheats: rising zap. */
+  cheat() {
+    this.tone({ freq: 220, duration: 0.3, type: 'sawtooth', volume: 0.35, slideTo: 880 });
+    this.noise(0.2, 0.2, 3000);
+  }
+
   wrongTurn() {
     this.tone({ freq: 160, duration: 0.32, type: 'square', volume: 0.35, slideTo: 90 });
   }

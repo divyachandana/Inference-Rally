@@ -17,8 +17,10 @@ MAX_WHY_CHARS = 48
 
 SYSTEM_PROMPT = (
     "You drive a taxi through a city maze to reach the exit. "
-    "At each junction choose one road. Reply with JSON only."
+    "At each junction choose one road. Roads you already drove lead back to places you have "
+    "been, so prefer a road you have not driven yet. Reply with JSON only."
 )
+LOOP_VISITS = 2  # a road driven this often means the car is circling
 
 _JSON_OBJECT = re.compile(r"\{.*?\}", re.DOTALL)
 _MOVE_WORD = re.compile(r"\b(left|straight|right|back)\b", re.IGNORECASE)
@@ -49,10 +51,16 @@ def build_messages(obs: Observation) -> list[dict[str, str]]:
         "Roads you can take:",
     ]
     for option in obs.options:
-        seen = f", visited {option.visits}x" if option.visits else ""
+        seen = f", already driven {option.visits}x" if option.visits else ", new road"
         lines.append(f"- {option.move.value} (goes {option.compass}{seen})")
-    allowed = "|".join(option.move.value for option in obs.options)
-    lines.append(f'Reply: {{"move": "{allowed}", "why": "<max 6 words>"}}')
+    fresh = [option.move.value for option in obs.options if not option.visits]
+    if fresh and any(option.visits >= LOOP_VISITS for option in obs.options):
+        lines.append(f"You are driving in circles. Take a new road: {', '.join(fresh)}.")
+    # Name the choices outside the JSON: some models (Qwen3) copy a "left|right" template
+    # verbatim instead of choosing.
+    allowed = ", ".join(option.move.value for option in obs.options)
+    lines.append(f"Pick exactly one of: {allowed}.")
+    lines.append('Reply: {"move": "<your pick>", "why": "<max 6 words>"}')
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": "\n".join(lines)},

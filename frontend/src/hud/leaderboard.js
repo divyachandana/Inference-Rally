@@ -26,6 +26,9 @@ export class Leaderboard {
    * @param {object|null} city Street map, credited under the map.
    */
   reset(racers, city = null) {
+    // Forget the previous lineup too: a racer left over from another mode would still be
+    // ranked (invisibly) and push everyone's place down.
+    this.rows.clear();
     this.pane.innerHTML = '';
     this.pane.dataset.state = 'overview';
     const panel = el('div', 'board', this.pane);
@@ -90,6 +93,17 @@ export class Leaderboard {
     line.style.setProperty('--racer', racer.color);
     el('b', '', line, racer.label);
     el('span', '', line, ` ${decision.move.toUpperCase()} ${(decision.metrics.latency_ms / 1000).toFixed(1)}S`);
+    this.feed.prepend(line);
+    while (this.feed.children.length > HUD.feedLength) this.feed.lastChild.remove();
+  }
+
+  /** A rogue's cheat in the feed: what Laya was asked and whether it said yes. */
+  addCheat(racer, cheat) {
+    const line = el('div', `feed-line cheat${cheat.used ? '' : ' declined'}`, this.feed);
+    line.style.setProperty('--racer', racer.color);
+    el('b', '', line, racer.label);
+    const what = cheat.kind === 'jump' ? 'JUMP' : 'DRONE';
+    el('span', '', line, ` ${cheat.used ? what : `NO ${what}`} ${Math.round(cheat.probability * 100)}%`);
     this.feed.prepend(line);
     while (this.feed.children.length > HUD.feedLength) this.feed.lastChild.remove();
   }

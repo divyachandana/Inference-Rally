@@ -4,7 +4,8 @@ Endpoints:
     GET  /api/events       SSE stream of race events (replays the current race on connect)
     POST /api/race/start   start a new race; optional JSON body {"seed": int, "profile": str}
     POST /api/race/stop    stop the current race
-    POST /api/race/preview show a profile's maze + racers on the attract screen {"profile": str}
+    POST /api/race/preview show a profile's maze + racers on the attract screen, stopping any
+                           running race {"profile": str, "seed": int}
     POST /api/human/move   the human player's move at a junction {"racer": str, "move": str}
     GET  /api/health       liveness check
 
@@ -20,21 +21,23 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from inference_rally import laya, qnn_host
 from inference_rally.config import AppConfig, build_decider, load_config
-from inference_rally.errors import ConfigError
 from inference_rally.deciders import HumanDecider
+from inference_rally.errors import ConfigError
 from inference_rally.maze import Move, generate_maze
 from inference_rally.models import RaceEvent
-from inference_rally.race import RaceEngine
+from inference_rally.race import CheatJudge, RaceEngine
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,20 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"  # made by scripts/fetch_map.py
 SSE_PING_S = 15
 SUBSCRIBER_QUEUE_SIZE = 2000
+
+
+class _UiFiles(StaticFiles):
+    """The built frontend; ``index.html`` is always revalidated.
+
+    The JS/CSS bundles have content hashes in their names, but the page that points to them
+    doesn't: a browser that kept an old ``index.html`` would keep running the old game.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        if response.media_type == "text/html":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class EventHub:
@@ -120,15 +137,20 @@ class RaceController:
                 branchiness=settings.branchiness,
             )
         racers = [
-            (spec, build_decider(spec, maze, settings.seed))
+            (spec, build_decider(spec, maze, settings.seed, self._config.qnn))
             for spec in self._config.racers(profile)
         ]
         self._humans = {spec.id: d for spec, d in racers if isinstance(d, HumanDecider)}
-        return RaceEngine(maze, racers, settings, self._hub.publish, city=city)
+        judge = _laya_judge(self._config) if any(s.rogue for s, _ in racers) else None
+        return RaceEngine(maze, racers, settings, self._hub.publish, judge, city=city)
 
-    async def preview(self, profile: str | None = None) -> None:
-        """Show a profile's maze and racers on the attract screen without racing."""
-        engine = self._build_engine(seed=None, profile=profile)
+    async def preview(self, profile: str | None = None, seed: int | None = None) -> None:
+        """Show a profile's maze and racers on the attract screen without racing.
+
+        Also how a race is stopped from the UI: the running race is cancelled and the
+        same maze (``seed``) is shown again, ready for a restart.
+        """
+        engine = self._build_engine(seed=seed, profile=profile)
         await self.stop()
         self._hub.reset()
         engine.announce(preview=True)
@@ -196,7 +218,10 @@ def create_app(config: AppConfig) -> Starlette:
     async def preview_race(request: Request) -> JSONResponse:
         body = await _json_body(request)
         try:
-            await controller.preview(profile=body.get("profile"))  # type: ignore[arg-type]
+            await controller.preview(
+                profile=body.get("profile"),  # type: ignore[arg-type]
+                seed=body.get("seed"),  # type: ignore[arg-type]
+            )
         except ConfigError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"ok": True})
@@ -237,15 +262,49 @@ def create_app(config: AppConfig) -> Starlette:
     ]
     # Serve the built frontend when present, so the demo needs a single process.
     if FRONTEND_DIST.is_dir():
-        routes.append(Mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="ui"))
+        routes.append(Mount("/", _UiFiles(directory=FRONTEND_DIST, html=True), name="ui"))
 
     @asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         await controller.preview()
+        npu_loading = asyncio.create_task(_prestart_npu_hosts(config))
         yield
+        npu_loading.cancel()
         await controller.stop()  # don't leave a race task running after Ctrl+C
+        await asyncio.to_thread(qnn_host.close_all)  # free the NPU
+        await asyncio.to_thread(laya.close_all)
 
     return Starlette(routes=routes, lifespan=lifespan)
+
+
+async def _prestart_npu_hosts(config: AppConfig) -> None:
+    """Load the NPU models while the attract screen shows, so the first race starts fast."""
+    specs = [s for p in config.profiles.values() for s in p]
+    if config.laya is not None and any(s.rogue for s in specs):
+        try:
+            await asyncio.to_thread(laya.get_bridge(config.laya).start)
+        except laya.LayaError:
+            logger.warning("Laya did not start", exc_info=True)
+    if config.qnn is None:
+        return
+    keys = {s.qnn_model for p in config.profiles.values() for s in p if s.runtime == "qnn"}
+    for key in sorted(k for k in keys if k and k in config.qnn.models):
+        try:
+            await asyncio.to_thread(qnn_host.get_host(config.qnn, key).start)
+        except qnn_host.QnnHostError:
+            logger.warning("NPU host for %s did not start", key, exc_info=True)
+
+
+def _laya_judge(config: AppConfig) -> CheatJudge | None:
+    """Laya's yes-probability for a cheat question, asked off the event loop."""
+    if config.laya is None:
+        return None
+    bridge = laya.get_bridge(config.laya)
+
+    async def judge(state: str, question: str) -> float:
+        return await asyncio.to_thread(bridge.noul, state, question)
+
+    return judge
 
 
 async def _json_body(request: Request) -> dict[str, object]:
@@ -267,7 +326,9 @@ def main() -> None:
     parser.add_argument("--profile", help="Override active_profile from racers.yaml")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     config = load_config()
     if args.profile:
         config = config.model_copy(update={"active_profile": args.profile})

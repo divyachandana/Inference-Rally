@@ -35,6 +35,15 @@ export const CAR = Object.freeze({
   width: 2.1,
   turnPortion: 0.22, // share of a segment spent rotating at the junction
   uturnPortion: 0.42,
+  jumpHeight: 14, // peak of a rogue's hop: clears the city's two- and three-floor houses
+  jumpArc: 0.25, // ...or this share of the hop's length, over the real map's longer blocks
+});
+
+/** The rogue's scouting drone (UNFAIR mode): where it hovers relative to its car. */
+export const DRONE = Object.freeze({
+  height: 3.6, // above the road, in view of the chase camera
+  ahead: 4, // in front of the car, scouting the junction
+  liftSeconds: 0.6, // time to rise off the roof
 });
 
 export const RENDER = Object.freeze({
@@ -160,7 +169,11 @@ export const SHORE = Object.freeze([
 export const MODES = Object.freeze({
   demo: { profile: 'demo', label: 'DEMO' },
   play: { profile: 'play', label: 'PLAY' },
+  unfair: { profile: 'unfair', label: 'UNFAIR' },
 });
+
+/** Order the G key cycles through. */
+export const MODE_CYCLE = Object.freeze(['demo', 'play', 'unfair']);
 
 /** Arrow keys for the human player. */
 export const HUMAN_KEYS = Object.freeze({

@@ -105,6 +105,11 @@ export class Game {
       racers.set(racer.id, { racer, index, car, arrows, hud, heading: racer.heading, stats: null });
     });
 
+    // Fewer racers than car panes: drop the spare panes and let the map take the free row.
+    const carPanes = this.dom.panes.slice(0, -1);
+    carPanes.forEach((pane, i) => pane.classList.toggle('unused', i >= event.racers.length));
+    carPanes[0].parentElement.classList.toggle('duo', event.racers.length <= 2);
+
     this.scene = scene;
     this.views.setup(event.racers.length, event.maze);
     this.leaderboard.reset(event.racers, city);
@@ -216,6 +221,7 @@ export class Game {
       const entry = this.race.racers.get(event.racer);
       const uturn = event.heading !== entry.heading && isOpposite(event.heading, entry.heading);
       entry.car.startDrive(event, uturn);
+      entry.car.setDrone(false); // the drone found the road: recall it
       entry.heading = event.heading;
       entry.hud.setStatus('driving', 'DRIVING');
       entry.hud.setProgress(event.progress);
@@ -224,6 +230,24 @@ export class Game {
       this.leaderboard.setProgress(event.racer, event.progress);
       // Keep the chosen arrow visible briefly as the car pulls away, then clear.
       setTimeout(() => entry.arrows.clear(), 450);
+    },
+
+    cheat(event, live) {
+      const entry = this.race.racers.get(event.racer);
+      entry.stats = event.stats;
+      const percent = Math.round(event.probability * 100);
+      const what = event.kind === 'jump' ? 'HEDGE JUMP' : 'DRONE';
+      if (event.used) {
+        const left = event.kind === 'jump' ? event.jumps_left : event.drones_left;
+        entry.hud.showBanner(`${what}! LAYA ${percent}% · ${left} LEFT`, 'bad');
+        entry.hud.setStatus('thinking', event.kind === 'jump' ? 'JUMPING!' : 'DRONE SCOUTING…');
+        if (event.kind === 'drone') entry.car.setDrone(true);
+      } else {
+        entry.hud.showBanner(`LAYA: NO ${what.toLowerCase()} (${percent}%)`, 'info');
+      }
+      this.leaderboard.updateStats(event.racer, event.stats);
+      this.leaderboard.addCheat(entry.racer, event);
+      if (live && event.used) this.sound.cheat();
     },
 
     incident(event, live) {
@@ -351,6 +375,7 @@ export class Game {
 
   /** Expand one racer's pane to full screen (or ``null`` for the split view). @param {number|null} index */
   focus(index) {
+    if (index !== null && this.dom.panes[index].classList.contains('unused')) return;
     this.dom.panes.forEach((pane, i) => {
       pane.hidden = index !== null && i !== index;
     });
