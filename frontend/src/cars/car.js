@@ -133,7 +133,8 @@ export class Car {
     const travel = drive.uturn ? Math.max(0, (p - turnPortion) / (1 - turnPortion)) : p;
     this.base.lerpVectors(drive.from, drive.to, easeInOutQuad(travel));
     // A rogue's hedge jump: arc up and over the bushes between the two junctions.
-    this.hop = drive.jump ? Math.sin(Math.PI * travel) * CAR.jumpHeight : 0;
+    const peak = Math.max(CAR.jumpHeight, drive.from.distanceTo(drive.to) * CAR.jumpArc);
+    this.hop = drive.jump ? Math.sin(Math.PI * travel) * peak : 0;
     if (p >= 1) {
       this.drive = null;
       this.hop = 0;

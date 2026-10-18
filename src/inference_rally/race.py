@@ -20,6 +20,7 @@ from inference_rally.maze import Heading, Maze, Move, Node
 from inference_rally.metrics import TokenMeter
 from inference_rally.models import (
     CheatEvent,
+    CityMap,
     CountdownEvent,
     DecisionEvent,
     DecisionMetrics,
@@ -95,6 +96,7 @@ class RaceEngine:
         settings: RaceSettings,
         emit: EmitFn,
         judge: CheatJudge | None = None,
+        city: CityMap | None = None,
     ) -> None:
         """Prepare a race.
 
@@ -104,9 +106,11 @@ class RaceEngine:
             settings: Timing and limits.
             emit: Function that publishes an event (e.g. to the SSE hub).
             judge: Decides whether a rogue racer cheats; without one, nobody cheats.
+            city: The real street map the maze was carved from, if any.
         """
         self.race_id = uuid.uuid4().hex[:8]
         self._maze = maze
+        self._city = city
         self._settings = settings
         self._emit = emit
         self._judge = judge
@@ -460,6 +464,8 @@ class RaceEngine:
                 dead_ends=maze.dead_ends(),
                 optimal_path=maze.shortest_path(),
                 seed=maze.seed,
+                closed=sorted(set(self._city.streets) - set(maze.roads)) if self._city else [],
+                city=self._city,
             ),
             racers=[
                 RacerView(
