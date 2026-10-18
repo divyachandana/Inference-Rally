@@ -1,19 +1,30 @@
 # NightWatch
 
-**On-device night supervision for memory care: it notices when a resident with dementia leaves their room
-or heads for a door at 2 a.m., and keeps escalating until a human responds. Nothing leaves the building.**
+In February 2019, Mildred Hernandez, 100 and living with dementia, left her Sacramento memory-care community at
+night through a door that locked behind her, and froze to death on the grounds. In March 2026 a Sacramento County
+jury awarded her family **$110 million**
+([Dudensing Law](https://dudensinglaw.com/results/hernandez-verdict/), the family's law firm; details beyond the
+verdict are the plaintiffs' account).
 
+**NightWatch is on-device night supervision for memory care: it notices when a resident leaves their room at
+night, and keeps escalating until a human responds.**
 ExecuTorch Hackathon 2026, Compute track (Copilot+ PC, Snapdragon X Elite).
 Judges: a 2-minute guided tour is in **[docs/JUDGES.md](docs/JUDGES.md)**.
 
-- **Sees the moment that matters.** A hallway camera runs a person detector through ExecuTorch on the laptop;
-  when a resident's feet cross the doorway line going out at night, the night phone gets a quiet heads-up.
-- **Climbs only when nobody answers.** Heads-up → urgent (exit door opens) → emergency (still no answer):
-  every staff phone alarms and the contact list fans out (on-call supervisor, family, owner) over free channels
-  (ntfy push, iMessage) or optional Twilio calls/SMS. It's a dry run until the nurse station turns it on, and
-  emergency services are always simulated. "I'm going" stops the climb.
-- **Hands over the paperwork.** Every closed alert gets the care team's severity badge and a draft care-record
-  entry in their format; the morning shift report is one page.
+1. **Works offline, entirely on the device.** Both models run through ExecuTorch on the nurse-station laptop: no
+   cloud, no subscription. Detection, escalation and the staff phones (over the local Wi-Fi) keep working with the
+   internet unplugged; only messages to family and the owner need a connection, and the screen says so.
+2. **Keeps escalating until a human responds.** Heads-up → urgent (an exit opens) → emergency (still no answer).
+   "I'm going" on a phone stops the climb.
+3. **Earlier, without false alarms.** It watches for a resident *leaving their room* at night (feet crossing the
+   doorway line on the hallway camera), not just the exit door. Bathroom trips and staff walking past stay quiet.
+4. **Private by design.** Nothing is recorded: frames are analysed in memory and dropped, the nurse station sees
+   dots on a radar, never video, and each camera can be off or night-only.
+5. **Reaches staff, family and owner at once.** At an emergency every staff phone alarms and the contact list fans
+   out (free ntfy push or iMessage, optional Twilio). Calling 911 stays a human decision: emergency services are
+   always simulated, and the demo runs contacts as a dry run.
+6. **Fits the care workflow.** Two taps after "Found safe" file a care record in the team's own taxonomy and
+   severity scale; the morning shift report is one page; the staff phone speaks English and Spanish.
 
 ![Nurse-station dashboard during a Level 2 (urgent) alert: the front entrance is open at 02:08 and R-07 is at the exit](docs/img/dashboard-alert.png)
 
@@ -390,7 +401,7 @@ go to `logs/bench/`; setup, caveats and the results tables are in [nightwatch/be
 
 Allegations in lawsuits are allegations, not findings. Check amounts against court records before quoting.
 
-- $110M jury verdict, Sacramento: a 100-year-old resident with Alzheimer's died of hypothermia after leaving an assisted-living facility ([Expert Institute](https://www.expertinstitute.com/resources/insights/110m-verdict-assisted-living-elopement/), [Nursing Home Abuse Center](https://www.nursinghomeabusecenter.com/blog/110-million-wrongful-death-lawsuit-against-assisted-living-facility/)). Some reports say $100M.
+- $110M jury verdict (March 2026), Sacramento: Mildred Hernandez, 100, living with dementia, left through a door that locked behind her in 2019 and died of hypothermia ([Dudensing Law](https://dudensinglaw.com/results/hernandez-verdict/), the family's law firm; also [Expert Institute](https://www.expertinstitute.com/resources/insights/110m-verdict-assisted-living-elopement/), [Nursing Home Abuse Center](https://www.nursinghomeabusecenter.com/blog/110-million-wrongful-death-lawsuit-against-assisted-living-facility/)). Some reports say $100M.
 - About $4M jury verdict, Wisconsin: door alarm ignored at 12:41 a.m. ([McKnight's Senior Living](https://www.mcknightsseniorliving.com/news/operator-ordered-to-pay-4-million-to-family-after-jury-finds-assisted-living-community-disregarded-safety-of-memory-care-resident/)).
 - Oregon: family sued a memory-care center and the state after a resident wandered away and froze to death ([OPB](https://www.opb.org/article/2024/04/17/senior-elder-memory-dementia-care-sandy-oregon-ki-soon-hyun-mt-hood/), [KGW](https://www.kgw.com/article/news/local/family-sues-memory-care-center-resident-dementia-escape-death-oregon/283-b6849400-d1f2-42e0-b988-52a0bc36dbfb)).
 - Window fall: a dementia patient died after jumping from a second-story window; the state ordered the memory-care unit moved to the first floor ([source](https://nursing-home-neglect.com/dementia-patient-dies-after-jumping-out-of-second-story-window/)).
