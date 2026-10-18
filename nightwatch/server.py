@@ -58,8 +58,14 @@ STATE_FILE = HERE.parent / "logs" / "night_state.json"   # git-ignored
 ENGINE: Engine
 DETECTOR: object | None = None
 TRACKERS: dict[str, Tracker] = {}
-TRACK_LOCK = threading.Lock()
 PAIRING: Pairing
+# Locking (no deadlocks): ENGINE.lock is an RLock guarding all engine state; every engine method takes it.
+# TRACK_LOCK guards TRACKERS and may be held while taking ENGINE.lock, never the other way round.
+# DETECT_LOCK serialises the detector (one ExecuTorch method instance is not safe to run concurrently)
+# and is never held with the other two. BENCH_LOCK only guards BENCH_JOB's check-and-start.
+TRACK_LOCK = threading.Lock()
+DETECT_LOCK = threading.Lock()
+BENCH_LOCK = threading.Lock()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -200,7 +206,17 @@ def _lan_ip() -> str | None:
 
 def _health(local: bool) -> dict[str, object]:
     """What's running: for the home page. The PIN and phone address only go to the laptop itself."""
-    out: dict[str, object] = {
+    with ENGINE.lock:
+        out = _health_unlocked()
+    if local:
+        ip = _lan_ip() if LAN["on"] else None
+        out["phones"] = {"pin": PAIRING.pin, "paired": PAIRING.devices,
+                         "url": f"http://{ip}:{LAN['port']}/staff/" if ip else None}
+    return out
+
+
+def _health_unlocked() -> dict[str, object]:
+    return {
         "uptime_s": round(time.time() - STARTED),
         "pattern_model": {"name": ENGINE.scorer.name, "device": ENGINE.scorer.device},  # type: ignore[attr-defined]
         "camera_model": {"name": DETECTOR.name, "device": DETECTOR.device} if DETECTOR else None,  # type: ignore[attr-defined]
@@ -209,11 +225,6 @@ def _health(local: bool) -> dict[str, object]:
         "lan": LAN["on"], "facility": ENGINE.facility, "settings_file": ENGINE.facility_path.name,
         "tests": "python -m pytest -q tests",
     }
-    if local:
-        ip = _lan_ip() if LAN["on"] else None
-        out["phones"] = {"pin": PAIRING.pin, "paired": PAIRING.devices,
-                         "url": f"http://{ip}:{LAN['port']}/staff/" if ip else None}
-    return out
 
 
 BENCH_JOB: dict[str, object] = {"running": False, "kind": None, "started": None, "log": "", "error": None}
@@ -240,15 +251,16 @@ def _bench_run(body: dict[str, object]) -> dict[str, object]:
 
     kind = "detector" if body.get("kind") == "detector" else "pattern"
     seconds = int(min(max(float(body.get("seconds", 10)), 3), 60))  # type: ignore[arg-type]
-    if BENCH_JOB["running"]:
-        return {"error": "a benchmark is already running"}
     pairs = _bench_pairs(kind)
     if not pairs:
         return {"error": f"no {kind} model files found in models/"}
     cmd = [sys.executable, str(HERE / "bench" / "benchmark.py"), "--kind", kind, "--seconds", str(seconds), "--rate", "max"]
     for p in pairs:
         cmd += ["--pte", p]
-    BENCH_JOB.update(running=True, kind=kind, started=time.strftime("%H:%M:%S"), log="", error=None, cmd=" ".join(cmd[1:]))
+    with BENCH_LOCK:
+        if BENCH_JOB["running"]:
+            return {"error": "a benchmark is already running"}
+        BENCH_JOB.update(running=True, kind=kind, started=time.strftime("%H:%M:%S"), log="", error=None, cmd=" ".join(cmd[1:]))
     ENGINE.log("bench", f"Benchmark started: {kind}, {seconds} s per backend ({', '.join(p.split(':')[1] for p in pairs)})")
 
     def work() -> None:
@@ -283,7 +295,8 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
         # Camera is off (or outside its schedule): the frame is dropped without being decoded or analysed.
         return {"paused": True, "reason": why, "tracks": [], "crossings": [], "people": 0}
     jpeg = base64.b64decode(str(body["jpeg"]).split(",")[-1])
-    boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
+    with DETECT_LOCK:
+        boxes, ms = DETECTOR.detect(jpeg)  # type: ignore[attr-defined]
     del jpeg
     roi = body.get("roi")
     if roi:
@@ -379,7 +392,10 @@ def main() -> None:
 
     def loop() -> None:
         while True:
-            ENGINE.tick()
+            try:
+                ENGINE.tick()
+            except Exception as exc:  # noqa: BLE001 - the watch loop must never stop
+                print(f"[tick] error: {exc!r}")
             time.sleep(1)
 
     if args.camera_model:

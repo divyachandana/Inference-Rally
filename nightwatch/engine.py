@@ -584,9 +584,9 @@ class Engine:
         except ValueError as exc:
             return {"error": str(exc)}
         timeouts = spec.pop("timeouts", None)
-        save_to.parent.mkdir(parents=True, exist_ok=True)
-        save_to.write_text(json.dumps(spec, indent=2))
         with self.lock:
+            save_to.parent.mkdir(parents=True, exist_ok=True)
+            save_to.write_text(json.dumps(spec, indent=2))
             if timeouts:
                 self.l1_timeout, self.ack_timeout = float(timeouts["l1"]), float(timeouts["ack"])
             self.facility_path = save_to

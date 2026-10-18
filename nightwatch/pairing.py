@@ -46,7 +46,10 @@ class Pairing:
     def allowed(self, ip: str, token: str | None) -> bool:
         if self.is_local(ip):
             return True
-        return bool(token) and _hash(token) in self._devices  # type: ignore[arg-type]
+        if not token:
+            return False
+        with self._lock:
+            return _hash(token) in self._devices
 
     def pair(self, ip: str, pin: str, name: str) -> tuple[bool, str]:
         """Return (ok, token-or-error)."""
@@ -54,6 +57,9 @@ class Pairing:
             now = time.time()
             recent = [t for t in self._fails.get(ip, []) if now - t < LOCKOUT_S]
             self._fails[ip] = recent
+            if len(self._fails) > 1000:   # forget devices whose lockout has expired
+                self._fails = {k: v for k, v in self._fails.items() if v and now - v[-1] < LOCKOUT_S}
+                self._fails[ip] = recent
             if len(recent) >= MAX_TRIES:
                 return False, f"too many wrong PINs, try again in {int(LOCKOUT_S - (now - recent[0]))} s"
             if not secrets.compare_digest(str(pin).strip(), self.pin):
@@ -66,7 +72,8 @@ class Pairing:
 
     @property
     def devices(self) -> int:
-        return len(self._devices)
+        with self._lock:
+            return len(self._devices)
 
     def unpair_all(self) -> None:
         with self._lock:
