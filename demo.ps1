@@ -8,11 +8,11 @@ $py = if (Test-Path .\.venv\Scripts\python.exe) { ".\.venv\Scripts\python.exe" }
 function Pick($npu, $cpu) { if (Test-Path "models\$npu") { @("models\$npu", "NPU") } else { @("models\$cpu", "CPU") } }
 $pattern = Pick "normal_pattern_qnn.pte" "normal_pattern_xnnpack.pte"
 $camera = if (Test-Path "models\person_ssdlite_qnn_int8.pte") { @("models\person_ssdlite_qnn_int8.pte", "NPU") } else { Pick "person_ssdlite_qnn.pte" "person_ssdlite_xnnpack.pte" }
-$args = @("nightwatch\server.py", "--lan", "--l1-timeout", "20", "--ack-timeout", "15",
+$serverArgs = @("nightwatch\server.py", "--lan", "--l1-timeout", "20", "--ack-timeout", "15",
           "--model", $pattern[0], "--device", $pattern[1], "--camera-model", $camera[0], "--camera-device", $camera[1])
-if ($Pin) { $args += @("--pin", $Pin) }
+if ($Pin) { $serverArgs += @("--pin", $Pin) }
 Write-Host "Pattern model: $($pattern[0]) on $($pattern[1]) | Camera model: $($camera[0]) on $($camera[1])"
-$server = Start-Process -FilePath $py -ArgumentList $args -PassThru -NoNewWindow
+$server = Start-Process -FilePath $py -ArgumentList $serverArgs -PassThru -NoNewWindow
 Start-Sleep -Seconds 4
 foreach ($page in "dashboard", "sim", "camera") { Start-Process "http://localhost:8000/$page/" }
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -match "Wi-Fi|Wireless" } | Select-Object -First 1).IPAddress
