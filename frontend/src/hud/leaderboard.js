@@ -23,6 +23,9 @@ export class Leaderboard {
 
   /** @param {object[]} racers Racer views from ``race_init``. */
   reset(racers) {
+    // Forget the previous lineup too: a racer left over from another mode would still be
+    // ranked (invisibly) and push everyone's place down.
+    this.rows.clear();
     this.pane.innerHTML = '';
     this.pane.dataset.state = 'overview';
     const panel = el('div', 'board', this.pane);

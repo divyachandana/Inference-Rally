@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from inference_rally.maze import Heading, Move
 
-Device = Literal["NPU", "GPU", "CPU", "HUMAN"]
+Device = Literal["NPU", "GPU", "HUMAN"]
 Runtime = Literal["simulated", "qnn", "human"]
 GridPoint = tuple[int, int]
 

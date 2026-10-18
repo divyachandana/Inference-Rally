@@ -1,277 +1,205 @@
-# Inference Rally — Project Plan
+# Inference Rally — Design
 
-> Local AI models race taxis through a 3D city. Every turn is a decision; every second is compute.
+> On-device AI models race taxis through a 3D maze. Every turn is a decision; every second is compute.
 
 **Hackathon:** ExecuTorch Hackathon — Compute Track (Copilot+ PC, Snapdragon X Elite)
-**Timeline:** Fri 10/16 UI on Mac (simulated racers) · Sat 10/17 Snapdragon: inference + backend · Sun 10/18 hackathon
 
 ---
 
 ## 1. Goal
 
-Show, visually and live, how different on-device models (and different compute units) **make decisions** and **how fast they make them**.
+Show, visually and live, how on-device models running on the **Snapdragon NPU** (ExecuTorch + QNN)
+**make decisions** and **how fast they make them**.
 
-- Each racer = one model on one compute unit (NPU / GPU / CPU).
-- All racers start at the same spot, same city, same destination.
-- At every intersection the racer's model is asked: *left, right, or straight?*
-- While the model thinks, its taxi **waits at the intersection** — slow inference visibly loses the race.
-- Floating HUD above every taxi: model, device, live tokens/sec, tokens used, status.
+- Each racer is a real model on the NPU (Gemma-4-E2B, Qwen3-1.7B), the human player, or a rogue
+  that may cheat.
+- All racers start at the same spot, in the same maze, with the same exit.
+- At every junction the racer's model is asked: *left, right, straight or back?*
+- While the model thinks, its taxi **waits at the junction**, so slow inference visibly loses.
+- HUD per racer: model, device, live tokens/sec, tokens used, time to first token, status.
 
 ### Race modes
 
-| Mode | What changes | What it shows |
+| Mode | Racers | What it shows |
 |---|---|---|
-| **Device race** (headline demo) | Same model on NPU vs GPU vs CPU | Compute speed: the NPU taxi wins on latency |
-| **Model race** | Different models, same device | Decision quality: wrong turns, path efficiency |
-| **Runtime race** (stretch) | Same model, ExecuTorch vs llama.cpp | Runtime efficiency |
+| **DEMO** | Gemma-4-E2B vs Qwen3-1.7B, both on the NPU | Decision quality and speed of two models sharing one NPU |
+| **PLAY** | You (arrow keys) vs Gemma vs Qwen3 | Human reaction time vs NPU inference |
+| **UNFAIR** | Honest Gemma vs a rogue Qwen3 that cheats when Laya says so | Rule-breaking judged by a third NPU model |
+
+A fully simulated `sim` profile runs anywhere, without an NPU (UI work, tests).
 
 ---
 
-## 1b. Game view (decided 10/16)
+## 2. Game view
 
-- **3D arcade racer, chase camera** low behind each car (retro arcade style, not top-down).
-- **Maze**: grid road network walled by hedges/trees/buildings — models can't see the exit; every junction is a decision.
-- **Retro look**: Three.js rendered at low internal resolution, upscaled with nearest-neighbor (crisp pixels), pixel font (Press Start 2P), fog, painted sky + hills, red/white curbs.
-- **Layout**: 2×2 split screen — 3 racer chase-cam panes + 1 overview pane (top-down maze minimap + leaderboard).
-- **HUD per pane**: left red segmented bar = live tokens/sec · right teal bar = progress to exit · top banner = events (Junction ahead / Thinking… / Wrong turn! / Dead end) · bottom = tokens used, model, device, position.
-- **Obstacles**: roadblocks, dead ends marked by a burning wreck, finish gate at the exit.
-- **Assets**: Kenney Car Kit, Nature Kit, City Kit (Roads) — CC0.
+- **3D arcade racer, chase camera** low behind each car, retro look: Three.js rendered at low
+  resolution and upscaled with crisp pixels, pixel font, fog, sky and hills, red/white curbs.
+- **Maze**: grid road network walled by hedges and trees; models can't see the exit, only its
+  direction, so every junction is a decision.
+- **Layout**: split screen, one chase-cam pane per racer plus an overview pane (top-down map +
+  standings + decision feed). With two racers the overview spans the bottom row.
+- **HUD per pane**: tokens/sec bar, progress-to-exit bar, event banner (thinking, wrong turn, dead end,
+  cheats), thought bubble with the model's reason, tokens, TTFT.
+- **Dead ends** are marked by a burning wreck; a green beam marks the exit.
 
-## 2. Gameplay rules
+## 3. Gameplay rules
 
-- Maze = grid of junctions (nodes) and roads (edges), generated from a seed so every racer gets the identical maze.
-- Obstacles: roadblocks, one-way streets, red lights (cost a short wait).
-- Destination: a pickup marker; the model knows its compass direction and distance, not the full map (fog of war).
-- **A\* ghost car** drives the optimal route as the reference "perfect player".
-- Decision prompt is small and identical for all racers, `temperature=0`, short `max_tokens`.
-- Model answers JSON: `{"move": "left", "why": "destination is west"}` → `why` shows in a thought bubble.
-- Invalid answer / illegal move → counts as a mistake, car takes a fallback move.
-- Race ends when all racers arrive or a time/step limit hits.
+- The maze is generated from a seed, so every racer (and every rematch) gets the identical maze.
+- A racer sees only its heading, the exit's direction and distance, and the roads at its junction
+  (with how often it already drove each one): no full map.
+- The decision prompt is small and identical for all racers, `temperature=0`, short replies.
+- The model answers JSON: `{"move": "left", "why": "new road toward exit"}`; `why` shows in a bubble.
+- An invalid answer counts as a mistake and the car takes a fallback move.
+- The race ends when every racer arrives, or a racer hits the decision limit (DNF).
 
-### Decision prompt (draft)
+### Decision prompt
 
 ```
-You are driving a taxi to a pickup point.
-Position: intersection (4,2). Heading: north.
-Destination: 3 blocks west, 2 blocks north.
-Options:
- - left (west): open road
- - straight (north): ROADBLOCK
- - right (east): one-way, wrong direction
-Reply with JSON only: {"move": "left|straight|right", "why": "<max 8 words>"}
+You drive a taxi through a city maze to reach the exit. At each junction choose one road.
+Roads you already drove lead back to places you have been, so prefer a road you have not
+driven yet. Reply with JSON only.
+
+You are facing west.
+Exit: 3 blocks east, 1 blocks north.
+Roads you can take:
+- left (goes south, new road)
+- right (goes north, already driven 2x)
+- back (goes east, already driven 3x)
+You are driving in circles. Take a new road: left.
+Pick exactly one of: left, right, back.
+Reply: {"move": "<your pick>", "why": "<max 6 words>"}
 ```
+
+Qwen3 gets `/no_think` appended so it answers directly instead of reasoning for hundreds of tokens.
+
+### UNFAIR mode cheats
+
+| Cheat | Effect | Cost |
+|---|---|---|
+| Hedge jump | Hop over the hedge to the neighbouring junction (only offered if it saves 2+ road blocks) | +1.5 s |
+| Drone peek | When circling, a drone scouts the junction and the car takes the best road | 2 s |
+
+Code offers at most one useful cheat per junction; **Laya** (a ModernBERT decision model on the NPU,
+~0.3 s per question) answers a yes/no question about it, described in words, and the rogue cheats if
+the probability clears the threshold (0.4 for jumps, 0.15 for the drone).
 
 ---
 
-## 3. Metrics
+## 4. Metrics
 
 | Metric | How it is measured | Shown where |
 |---|---|---|
-| TTFT (time to first token) | Timed by our client on the stream | HUD + leaderboard |
-| Tokens/sec | completion tokens ÷ (last token − first token) | HUD (live) + leaderboard |
-| Tokens per decision / total | `usage` field, else count streamed chunks | HUD + leaderboard |
-| Decision latency | request sent → move parsed | Leaderboard |
-| Wrong turns / invalid moves | Compared to A* next step / rule check | HUD flash + leaderboard |
-| Path efficiency | A* optimal length ÷ actual length | Final results |
-| Finish time & place | Game clock | Podium screen |
-| CPU load (stretch) | `psutil` | Leaderboard |
+| TTFT (time to first token) | Timed by our client on the streamed reply | HUD + leaderboard |
+| Tokens/sec | tokens after the first ÷ (last token − first token) | HUD (live) + leaderboard |
+| Tokens per decision / total | Host-reported count, else streamed pieces | HUD + leaderboard |
+| Wrong turns / invalid moves | Compared with the A* next step / reply parsing | HUD + leaderboard |
+| Route efficiency | A* optimal length ÷ distance actually driven | Results |
+| Cheats | Rogue cheats taken | Results (UNFAIR) |
+| Finish time & place | Game clock | Results screen |
 
-All timing is done by **our own client**, so numbers are comparable across ExecuTorch, llama.cpp and GenieX.
+All timing is done by **our own client**, so every racer is measured the same way.
 
 ---
 
-## 4. Architecture
+## 5. Architecture
 
 ```mermaid
 flowchart TB
   subgraph FE["Browser — Vite + Three.js"]
-    scene["City scene<br/>Kenney glTF"]
-    hud["Racer HUD<br/>CSS2DRenderer"]
-    board["Leaderboard"]
-    audio["Audio<br/>Three.js Audio"]
+    scene["Maze, cars, drone"]
+    hud["Racer HUDs"]
+    board["Overview map + standings"]
+    audio["Chiptune synth"]
   end
 
   subgraph BE["Game server — Python, Starlette"]
-    ws["SSE event hub"]
-    race["Race engine<br/>turn loop, rules"]
-    city["City graph<br/>NetworkX + A*"]
-    metrics["Metrics<br/>TTFT, TPS, tokens"]
-    adapter["Racer adapter<br/>OpenAI client, streaming"]
+    hub["SSE event hub"]
+    race["Race engine<br/>junction → decide → drive"]
+    maze["Maze<br/>NetworkX + A*"]
+    deciders["Deciders<br/>NPU / human / simulated"]
+    rogue["Rogue cheats"]
     cfg[("racers.yaml")]
   end
 
-  subgraph INF["On-device inference — OpenAI-compatible endpoints"]
-    et["ExecuTorch server<br/>et_server.py<br/>XNNPACK / QNN"]
-    lcpp["llama.cpp server<br/>Metal / CPU / Adreno"]
-    genie["GenieX server<br/>NPU / GPU / CPU"]
+  subgraph NPU["Snapdragon X Elite — Hexagon NPU"]
+    gemma["qnn_llm_host.exe<br/>Gemma-4-E2B .pte"]
+    qwen["qnn_llm_host.exe<br/>Qwen3-1.7B .pte"]
+    laya["Laya (laya_bridge.py)<br/>ModernBERT .pte"]
   end
 
-  subgraph HW["Hardware"]
-    mac["Mac (Sat)<br/>Apple GPU, CPU"]
-    sd["Snapdragon X Elite (Sun)<br/>Hexagon NPU, Adreno GPU, Oryon CPU"]
-  end
-
-  ws -->|"Server-Sent Events: state, metrics, thoughts"| FE
-  FE -->|"POST /api/race/start"| ws
-  ws --- race
-  race --- city
-  race --- adapter
-  adapter --- metrics
-  cfg --> adapter
-  adapter -->|"HTTP /v1/chat/completions (stream)"| et
-  adapter --> lcpp
-  adapter --> genie
-  et --> HW
-  lcpp --> HW
-  genie --> HW
+  hub -->|"Server-Sent Events"| FE
+  FE -->|"POST /api/race/start"| hub
+  hub --- race
+  race --- maze
+  race --- deciders
+  race --- rogue
+  cfg --> deciders
+  deciders -->|"named pipe, JSON lines, streamed"| gemma
+  deciders --> qwen
+  rogue -->|"stdin/stdout, yes/no question"| laya
 ```
 
-### Key design decision: every racer is an OpenAI-compatible endpoint
+The game server launches each NPU host itself (one `qnn_llm_host.exe` per model, from the ExecuTorch
+QNN bundle) and talks to it over a Windows named pipe; each junction is a one-shot request with a
+fresh context. Laya's host code needs PyTorch, so it runs in a separate Python via
+`scripts/laya_bridge.py`.
 
-The game server never knows *which* runtime is behind a racer. Switching from Mac to Snapdragon is only a `racers.yaml` change:
-
-```yaml
-racers:
-  - name: Llama-3.2-1B
-    device: NPU
-    runtime: executorch
-    base_url: http://127.0.0.1:8101/v1
-    model: llama3_2_1b_qnn
-    color: "#1D9E75"
-  - name: Llama-3.2-1B
-    device: CPU
-    runtime: executorch
-    base_url: http://127.0.0.1:8102/v1
-    model: llama3_2_1b_xnnpack
-    color: "#D85A30"
-  - name: Llama-3.2-1B
-    device: GPU
-    runtime: llama.cpp
-    base_url: http://127.0.0.1:8103/v1
-    model: llama-3.2-1b-q4_0
-    color: "#7F77DD"
-```
-
-ExecuTorch has no built-in OpenAI server, so we write a thin wrapper, `et_server.py`, that loads a `.pte` with the ExecuTorch LLM runner and exposes `/v1/chat/completions` with streaming.
-
-### One decision turn (sequence)
+### One decision turn
 
 ```mermaid
 sequenceDiagram
   participant R as Race engine
-  participant A as Racer adapter
-  participant M as Model endpoint
+  participant D as NPU decider
+  participant H as qnn_llm_host (NPU)
   participant B as Browser
-  R->>B: car arrives at intersection (status: thinking)
-  R->>A: decide(state)
-  A->>M: POST /v1/chat/completions (stream)
-  M-->>A: first token
-  A-->>B: TTFT
-  M-->>A: tokens...
-  A-->>B: live TPS, token count
-  M-->>A: done
-  A->>R: {"move": "left", "why": "..."}
+  R->>B: thinking (car stops at the junction)
+  R->>D: decide(prompt)
+  D->>H: {"prompt", "reset": true, "stream": true}
+  H-->>D: first piece
+  D-->>B: TTFT
+  H-->>D: pieces...
+  D-->>B: live tokens/sec, token count
+  H-->>D: final reply + host metrics
+  D->>R: {"move": "left", "why": "..."}
   R->>R: validate move, compare with A*
-  R->>B: animate car to next intersection + thought bubble
+  R->>B: decision + drive to the next junction
 ```
 
 ---
 
-## 5. Tech stack
+## 6. Tech stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Inference (primary) | **ExecuTorch** — XNNPACK (CPU) on Mac and Snapdragon, **QNN backend (Hexagon NPU)** on Snapdragon | It's an ExecuTorch hackathon; QNN backend is verified on Windows on Snapdragon X Elite |
-| Inference (fallback / comparison) | llama.cpp `llama-server` (Mac: Metal, Snapdragon: CPU/Adreno OpenCL) and Qualcomm GenieX | Proven, OpenAI-compatible, same GGUF everywhere |
-| Models | Llama 3.2 1B / 3B, Qwen3 small; `.pte` for ExecuTorch, Q4_0 `.gguf` for llama.cpp | Small = sub-second decisions |
-| Model client | `openai` Python SDK (streaming) | One client for every runtime |
-| Game server | Starlette + sse-starlette, Uvicorn, Pydantic, asyncio | Python, async racers in parallel; SSE = one-way event stream, auto-reconnect, no extra deps |
-| City + pathfinding | NetworkX (graph + A*) | Built-in A*, easy obstacles |
-| Frontend | Three.js + GLTFLoader + CSS2DRenderer, bundled with Vite | Nice 3D, crisp HUD labels, runs in any browser (no ARM64 package risk) |
-| Assets | Kenney City Kit (Roads, Commercial), Car Kit, audio packs — CC0 | Free, consistent low-poly look |
-| Audio | Three.js `AudioListener` / `PositionalAudio` | Already in the stack |
-| Config | `racers.yaml` | Mac → Snapdragon is a config swap |
+| Layer | Choice |
+|---|---|
+| Inference | **ExecuTorch QNN backend** on the Hexagon NPU: `qnn_llm_host.exe` serving Gemma-4-E2B and Qwen3-1.7B `.pte` files; Laya (QNN `.pte`) for the rogue's cheat calls |
+| Game server | Starlette + sse-starlette, Uvicorn, Pydantic, asyncio |
+| Maze + pathfinding | NetworkX (graph + A*) |
+| Frontend | Three.js, bundled with Vite; procedural models and textures, no asset files |
+| Audio | Web Audio chiptune synth |
+| Config | `racers.yaml` (models, lineups, cheat settings) |
 
 ---
 
-## 6. Repo layout (target)
-
-```
-Inference-Rally/
-├── docs/PLAN.md                  ← this file
-├── racers.yaml                   racer config (mac + snapdragon profiles)
-├── pyproject.toml
-├── src/inference_rally/
-│   ├── server.py                 Starlette app + SSE event hub
-│   ├── race.py                   race engine, turn loop, rules
-│   ├── city.py                   seeded city graph, obstacles, A*
-│   ├── racers.py                 racer adapter, streaming + metrics
-│   ├── prompts.py                decision prompt + JSON parsing
-│   ├── metrics.py                TTFT, TPS, tokens, efficiency
-│   └── et_server.py              ExecuTorch .pte → OpenAI-compatible server
-├── frontend/
-│   ├── index.html
-│   ├── src/  main.js scene.js cars.js hud.js leaderboard.js audio.js ws.js
-│   └── public/assets/  models/  audio/
-├── models/                       .pte / .gguf (git-ignored)
-├── scripts/
-│   ├── export_pte.sh             export LLM → .pte (XNNPACK, QNN)
-│   ├── start_racers_mac.sh       launch model servers on Mac
-│   └── setup_snapdragon.ps1      Windows ARM64 setup checklist
-└── tests/
-```
-
----
-
-## 7. Timeline
-
-### Fri 10/16 (today, Mac) — UI first, with simulated racers
-- [x] Plan + architecture + coding standards
-- [x] Lock the UI layout (2x2 chase-cam split screen + overview)
-- [x] Freeze the **event schema** (`models.py`, streamed over Server-Sent Events)
-- [ ] Frontend: Vite + Three.js city with Kenney assets, taxis, A* ghost car, camera
-- [ ] HUD above each taxi (model, device, live TPS, tokens, status), thought bubbles
-- [ ] Leaderboard, race controls, podium screen
-- [ ] Sounds: countdown, engine, thinking tick, decision chime, wrong-turn buzzer, fanfare
-- [x] Simulated racers (`runtime: simulated` in `racers.yaml`) stream realistic events, so the UI is fully testable without any model
-
-### Sat 10/17 — hands on the Snapdragon laptop
-- [ ] Hour 1: ARM64 Python + one model answering on the NPU (ExecuTorch QNN, else GenieX)
-- [ ] Backend core: `city.py`, `racers.py`, `prompts.py`, `race.py`, `server.py`
-- [ ] `et_server.py` (ExecuTorch → OpenAI-compatible), llama.cpp / GenieX for GPU and CPU racers
-- [ ] Swap the UI from mock server to real server (same event schema)
-- [ ] First real NPU vs GPU vs CPU race; record backup video
-
-### Sun 10/18 — hackathon
-- [ ] Tune prompt, race length, camera
-- [ ] Rehearse 2-minute pitch + demo
-
-## 8. Risks & mitigations
+## 7. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| ExecuTorch QNN `.pte` must be compiled for the target SoC with Qualcomm's QAIRT SDK; on Windows ARM64 the export step needs x64 Python (emulation) | Try export Saturday on an x64 host; ask organizers for prebuilt QNN LLM `.pte`; fallback NPU path = GenieX |
-| ExecuTorch Python wheels / LLM runner on Windows ARM64 | `et_server.py` can wrap the C++ llama runner via subprocess instead of Python bindings |
-| Slow LLM calls make animation choppy | Cars animate between intersections independently; only decisions block |
-| RAM limits with several models at once | 1B–3B models at 4-bit; run racers sequentially per turn if needed |
-| Venue Wi-Fi | Models, assets, wheels on USB |
-| Something breaks live | Recorded backup video + replay mode from JSON logs |
+| Exceeding a model's compiled context aborts its host | One-shot requests with `"reset": true`; the reply length is capped below the context |
+| Export and runner disagree on the attention-mask shape (3-D vs 4-D) | Runner patch that reads the mask's last two dimensions (`docs/patches/`) |
+| Several models share one NPU and slow each other down | Shown honestly: tokens/sec are measured live during the race |
+| A model or Laya fails to start | Its car shows "MODEL OFFLINE" and drives fallback moves; the rogue races honestly without Laya |
 
 ---
 
-## 9. Open questions
+## 8. Coding standards
 
-- Is ExecuTorch **required** for inference, or just encouraged? (Decides how much NPU work goes into ExecuTorch QNN vs GenieX.)
-- Laptop specs at the venue (RAM, admin rights, preinstalled SDKs)?
-- Any prebuilt ExecuTorch QNN models provided by organizers?
+All code follows **[CODING_STANDARDS.md](CODING_STANDARDS.md)**: single-responsibility modules, type
+hints + Pydantic models, Google-style docstrings, *why*-comments, `logging` not `print`, ruff + mypy +
+pytest before every commit.
 
-## 10. Coding standards
+## 9. Ideas
 
-All code follows **[CODING_STANDARDS.md](CODING_STANDARDS.md)**: single-responsibility modules, type hints + Pydantic models, Google-style docstrings, *why*-comments, `logging` not `print`, ruff + mypy + pytest before every commit, JSDoc + Prettier/ESLint on the frontend.
-
-## 11. Stretch goals
-
-- AI race commentator: small local LLM writes one-liners, local TTS speaks them
-- Vision racer: model gets a screenshot of the scene each turn
-- Battery / power draw per racer
-- Replay viewer for any past race
+- AI race commentator: a small local model writes one-liners for each incident
+- Vision racer: the model gets a screenshot of its view at each junction
+- Power draw per racer
+- Replay viewer for past races

@@ -36,7 +36,7 @@ testable and easy to change under hackathon time pressure.
 - `TODO(name): …` only with an owner; no orphan TODOs at demo time.
 
 ```python
-"""Racer adapter: talks to any OpenAI-compatible endpoint and measures inference speed."""
+"""Racer adapter: asks a model on the NPU for its move and measures inference speed."""
 
 from __future__ import annotations
 
@@ -84,5 +84,5 @@ async def decide(self, prompt: str) -> tuple[str, DecisionMetrics]:
 - **Tooling** — `ruff check`, `ruff format`, `mypy`, `pytest` all pass before each commit (wired via `pre-commit`).
 - **Dependencies** — pinned in `pyproject.toml` / `package.json`; no unused packages.
 - **Git** — small commits with clear messages (`feat: add A* ghost racer`, `fix: handle invalid JSON move`).
-- **Secrets / big files** — never committed; models (`.pte`, `.gguf`) and assets downloads are git-ignored.
+- **Secrets / big files** — never committed; models (`.pte`) and assets downloads are git-ignored.
 - **README** — every script in `scripts/` has a one-line usage note in the README.

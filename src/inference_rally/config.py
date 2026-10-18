@@ -1,7 +1,7 @@
 """Load ``racers.yaml`` and build the racers for the active profile.
 
-Profiles mix real and simulated racers: Gemma on the Snapdragon NPU (``runtime: qnn``),
-simulated GPU/CPU racers and the human player — switching is a one-line config change.
+Profiles mix models on the Snapdragon NPU (``runtime: qnn``), simulated racers and the
+human player — switching is a one-line config change.
 """
 
 from __future__ import annotations

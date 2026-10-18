@@ -18,11 +18,11 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 
 ## Screenshots
 
-![DEMO mode (earlier build): simulated NPU vs GPU vs CPU racing through the maze, with the live map and standings](docs/images/demo-race.png)
+![DEMO mode: Gemma-4-E2B and Qwen3-1.7B, both on the NPU, racing through the maze, with the live map, standings and decision feed](docs/images/demo-race.jpg)
 
-| PLAY mode (earlier Llama-3.2-1B build) | Race results |
+| UNFAIR mode: the rogue's drone scouts a junction | Race results |
 |---|---|
-| ![PLAY mode race](docs/images/play-race.png) | ![Results screen](docs/images/results.png) |
+| ![UNFAIR mode drone peek](docs/images/unfair-drone.jpg) | ![Results screen](docs/images/results.jpg) |
 
 ## Three modes
 

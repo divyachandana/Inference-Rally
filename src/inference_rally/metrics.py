@@ -1,8 +1,8 @@
 """Client-side inference timing.
 
 Every decider uses a :class:`TokenMeter`, so TTFT and tokens/sec are measured the same
-way for ExecuTorch, llama.cpp, GenieX and the simulator — server-reported numbers differ
-per runtime and are not comparable.
+way for every model on the NPU and for the simulator — host-reported timings are not
+comparable across models and processes.
 """
 
 from __future__ import annotations
