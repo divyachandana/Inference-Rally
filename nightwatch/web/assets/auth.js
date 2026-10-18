@@ -49,21 +49,5 @@
     };
   }
 
-  // Nurse-station laptop: show the PIN (only the laptop itself receives it from the server).
-  if (location.pathname.startsWith('/dashboard')) {
-    window.addEventListener('DOMContentLoaded', () => {
-      const pill = el(`<div aria-live="polite" style="position:fixed;left:16px;bottom:16px;z-index:50;display:none;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;background:var(--nw-surface-2,#131d33);border:1px solid var(--nw-line-strong,#31436a);color:var(--nw-ink-2,#c6d0e3);font:600 13px var(--nw-font,system-ui);box-shadow:0 8px 24px rgba(0,0,0,.35)"></div>`);
-      document.body.appendChild(pill);
-      const tick = async () => {
-        try {
-          const s = await (await window.fetch('/api/state')).json();
-          if (!s.pairing) return;
-          pill.style.display = 'flex';
-          const pin = String(s.pairing.pin).replace(/\D/g, ''), n = Number(s.pairing.devices) || 0;  // digits only
-          pill.innerHTML = `Pair a phone · PIN <b style="color:var(--nw-ink,#ecf1fa);font-size:16px;letter-spacing:.12em;font-variant-numeric:tabular-nums">${pin}</b> · ${n} paired`;
-        } catch {}
-      };
-      tick(); setInterval(tick, 5000);
-    });
-  }
+  // The nurse-station dashboard shows the PIN itself (top chips), from state.pairing.
 })();

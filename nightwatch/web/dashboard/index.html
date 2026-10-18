@@ -135,6 +135,8 @@
   .sim-tag .nw-ico { width: 13px; height: 13px; }
   .radar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--nw-muted); margin-top: 10px; }
   .radar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .nw-chip.pair { border-color: rgba(138, 180, 255, .45); color: var(--nw-ink-2); }
+  .nw-chip.pair .pin { font-family: var(--nw-mono); font-size: 14px; letter-spacing: .14em; color: var(--nw-accent); }
   .top-right .nw-btn { min-height: 36px; font-size: 13.5px; }
 
   @media (max-width: 640px) {
@@ -158,6 +160,7 @@
   <div class="top-mid"><div class="summary" id="summary" role="status" aria-live="polite"></div></div>
   <div class="top-right">
     <span id="offline-host"></span>
+    <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener" id="perf-link">Performance</a>
     <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener" id="report-link">Shift report</a>
     <span class="nw-mode" id="mode">–</span>
     <div class="nw-clock" id="clock" aria-label="Facility clock">--:--</div>
@@ -172,6 +175,7 @@
   <span class="nw-chip" id="c-temp"></span>
   <span class="nw-chip" id="c-visits"></span>
   <span class="nw-chip" id="c-ack"></span>
+  <span class="nw-chip pair" id="c-pair" hidden></span>
 </div>
 <section class="takeover" id="takeover" hidden role="alert" aria-live="assertive"></section>
 <main>
@@ -220,6 +224,7 @@ const { camState, camStateHTML, cameraControls, syncCameraControls, handleCamera
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
 $('report-link').insertAdjacentHTML('afterbegin', icon('report'));
+$('perf-link').insertAdjacentHTML('afterbegin', icon('chip'));
 offlineBadge($('offline-host'));
 
 const heat = (u) => (u >= 0.9 ? 'var(--nw-l3)' : u >= 0.6 ? 'var(--nw-l2)' : u >= 0.35 ? 'var(--nw-l1)' : 'var(--nw-ok)');
@@ -429,7 +434,7 @@ function renderResidents(s) {
     </div>`;
   }).join('');
 }
-const LOGK = { L1: 'Level 1', L2: 'Level 2', L3: 'Level 3', ack: 'Ack', resolved: 'Resolved', contact: 'Contact', sensor: 'Sensor', door: 'Door', clock: 'Clock', camera: 'Camera' };
+const LOGK = { L1: 'Level 1', L2: 'Level 2', L3: 'Level 3', ack: 'Ack', resolved: 'Resolved', contact: 'Contact', sensor: 'Sensor', door: 'Door', clock: 'Clock', camera: 'Camera', pairing: 'Pairing' };
 function renderLog(s) {
   $('log').innerHTML = s.events.length ? s.events.map((e) => `<li><time>${esc(e.t)}</time><span class="k k-${esc(e.kind)}">${esc(LOGK[e.kind] || e.kind)}</span><span>${esc(e.text)}</span></li>`).join('')
     : '<li><span></span><span></span><span style="color:var(--nw-muted)">Quiet so far.</span></li>';
@@ -457,6 +462,10 @@ function renderHeader(s) {
   const seen = live.some((c) => (c.tracks || []).length || c.persons);
   $('c-cam').innerHTML = `<span class="nw-dot ${seen ? 'is-hit' : live.length ? 'is-live' : ''}"></span>Cameras <b>${nOn} on · ${cams.filter((c) => c.enabled === false).length} off${cams.some((c) => c.enabled !== false && c.active === false) ? ` · ${cams.filter((c) => c.enabled !== false && c.active === false).length} paused` : ''}</b>${live.length
     ? ` · <b>${seen ? 'person seen' : 'clear'}${s.camera_p50_ms != null ? ` · ${esc(s.camera_p50_ms)} ms/frame` : ''}</b>` : ''}`;
+  // Phone pairing PIN: only the laptop itself receives state.pairing. Digits only.
+  const pair = s.pairing;
+  $('c-pair').hidden = !pair;
+  if (pair) $('c-pair').innerHTML = `${icon('phone')}Pair a phone · PIN <b class="pin">${String(pair.pin).replace(/\D/g, '')}</b> · <b>${Number(pair.devices) || 0}</b> paired`;
   $('c-net').innerHTML = `${icon('wifiOff')}Internet needed <b>No</b>`;
   $('c-staff').innerHTML = `${icon('user')}Night staff on duty <b>${esc(s.night_staff)}</b>`;
   $('c-temp').innerHTML = `${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b>`;

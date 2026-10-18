@@ -95,6 +95,7 @@
     <a class="nw-btn nw-btn--ghost" href="/dashboard/" target="_blank" rel="noopener">Nurse station</a>
     <a class="nw-btn nw-btn--ghost" href="/staff/" target="_blank" rel="noopener">Staff phone</a>
     <a class="nw-btn nw-btn--ghost" href="/camera/" target="_blank" rel="noopener">Camera</a>
+    <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener">Performance</a>
     <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener">Shift report</a>
   </nav>
 </header>
@@ -279,7 +280,7 @@ const BEATS = [
     act: 'On the staff phone: tap I\'m going at the heads-up or urgent stage, then Found safe.' },
   { title: 'Wi-Fi off', when: 'any time', scn: 'night_elopement', run: 'Run it again offline',
     say: 'Now I turn the Wi-Fi off. Everything runs on this laptop, so it keeps protecting: no cloud, no data leaving the building.',
-    act: 'Turn Wi-Fi off first. The dashboard shows "Offline · still protecting". Finish on the shift report.', report: true },
+    act: 'Turn Wi-Fi off first. The dashboard shows "Offline · still protecting". Show /perf/: the models run on this laptop, here is how fast. Finish on the shift report.', report: true, perf: true },
 ];
 let step = 0;
 try { step = Math.min(BEATS.length - 1, Math.max(0, +localStorage.getItem('nw-demo-step') || 0)); } catch {}
@@ -292,6 +293,7 @@ function renderGuide() {
   $('beat').innerHTML = `<div><div class="k">Step ${step + 1} of ${BEATS.length} · ${esc(b.when)}</div><h3>${esc(b.title)}</h3>
       <p class="say">“${esc(b.say)}”</p><p class="do"><b style="color:var(--nw-ink-2)">Do:</b> ${esc(b.act)}</p></div>
     <div class="acts"><button class="nw-btn nw-btn--primary run" data-run="${step}">${icon('play')}${esc(b.run)}</button>
+      ${b.perf ? `<a class="nw-btn" href="/perf/" target="_blank" rel="noopener">${icon('chip')}Open performance</a>` : ''}
       ${b.report ? `<a class="nw-btn" href="/report/" target="_blank" rel="noopener">${icon('report')}Open shift report</a>` : ''}
       <div class="nb"><button class="nw-btn" data-go="-1" ${step === 0 ? 'disabled' : ''}>${icon('back')}Back</button>
         <button class="nw-btn" data-go="1" ${step === BEATS.length - 1 ? 'disabled' : ''}>Next${icon('next')}</button></div></div>`;
