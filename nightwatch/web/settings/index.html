@@ -125,6 +125,15 @@
   .cmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--nw-bg); border: 1px solid var(--nw-line); }
   .cmd .k { grid-column: 1 / -1; font-size: 12px; color: var(--nw-muted); }
   .cmd code { font-size: 13px; }
+  .impact { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .impact:empty { display: none; }
+  .impact li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 10px; font-size: 14px;
+               border: 1px solid var(--nw-line); background: var(--nw-bg-2); color: var(--nw-ink-2); }
+  .impact li .nw-ico { width: 18px; height: 18px; margin-top: 1px; }
+  .impact li.bad { border-color: var(--nw-l3); background: var(--nw-l3-bg); color: var(--nw-ink); } .impact li.bad .nw-ico { color: var(--nw-l3); }
+  .impact li.warn { border-color: rgba(246,195,68,.5); background: var(--nw-l1-bg); color: var(--nw-ink); } .impact li.warn .nw-ico { color: var(--nw-l1); }
+  .impact li.ok .nw-ico { color: var(--nw-ok); }
+  .impact b { color: var(--nw-ink); }
   dialog.wide { max-width: min(600px, calc(100vw - 32px)); }
   [hidden] { display: none !important; }
 
@@ -161,13 +170,10 @@
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand"><div class="nw-brand-mark" style="background:none;border:0"><img src="/assets/brand/logo.svg" alt="" width="38" height="38" style="display:block"></div><div><div class="nw-brand-name">Settings</div>
-    <div class="nw-brand-sub" id="sub">Facility, residents, exits and cameras · this laptop only</div></div></div>
-  <nav class="nav" aria-label="Other screens">
-    <a class="nw-btn nw-btn--ghost" href="/home/">Home</a>
-    <a class="nw-btn nw-btn--ghost" href="/dashboard/">Nurse station</a>
-    <div data-nw-display></div>
-  </nav>
+  <a class="nw-brand" href="/home/" title="NightWatch home" style="color:inherit;text-decoration:none"><div class="nw-brand-mark" style="background:none;border:0"><img src="/assets/brand/logo.svg" alt="" width="38" height="38" style="display:block"></div><div><div class="nw-brand-name">NightWatch</div>
+    <div class="nw-brand-sub" id="sub">Settings · facility, residents, exits and cameras</div></div></a>
+  <div data-nw-display></div>
+  <nav data-nw-nav style="flex-basis:100%"></nav>
 </header>
 
 <main>
@@ -199,12 +205,13 @@
   </div>
 </div>
 
-<dialog id="dlg-save" aria-labelledby="ds-title" aria-describedby="ds-body">
+<dialog id="dlg-save" class="wide" aria-labelledby="ds-title" aria-describedby="ds-body">
   <form method="dialog">
     <h2 id="ds-title"></h2>
     <p id="ds-body"><b>Saving restarts the night: current alerts are cleared.</b> Residents go back to bed, the event log empties, and the new settings apply straight away. Paired phones stay paired.</p>
+    <ul id="ds-impact" class="impact"></ul>
     <p class="muted" style="font-size:13px">Written to <code>data/facility.local.json</code> on this laptop (git-ignored).</p>
-    <div class="row"><button class="nw-btn nw-btn--ghost" value="cancel" autofocus>Keep editing</button><button class="nw-btn nw-btn--primary" value="ok">Save and restart night</button></div>
+    <div class="row"><button class="nw-btn nw-btn--ghost" value="cancel" autofocus>Keep editing</button><button class="nw-btn nw-btn--primary" value="ok" id="ds-ok">Save and restart night</button></div>
   </form>
 </dialog>
 <dialog id="dlg-reset" class="wide" aria-labelledby="dr-title">
@@ -1087,6 +1094,10 @@ $('save').onclick = async () => {
   showErrors = true;
   showValidation(errs, true);
   if (errs.length) return;
+  const before = await nightSnapshot();
+  $('ds-impact').innerHTML = impactHTML(before);
+  const nAlerts = before?.open || 0;
+  $('ds-ok').textContent = nAlerts ? `Clear ${nAlerts} open alert${nAlerts > 1 ? 's' : ''} and save` : 'Save and restart night';
   const d = $('dlg-save'); d.returnValue = ''; d.showModal();
   const ok = await new Promise((res) => d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }));
   if (!ok) { $('save').focus(); return; }
@@ -1100,8 +1111,10 @@ $('save').onclick = async () => {
     } else if (!r.ok || out.error) {
       banner($('result'), 'bad', `${icon('siren')}<div><b>The server didn't accept these settings.</b> ${esc(out.error || `HTTP ${r.status}`)}</div>`);
     } else {
+      const cams = await keepCameraPrivacy(before, out);
       await load();
-      banner($('result'), 'ok', `${icon('check')}<div><b>Saved and applied.</b> Written to <code>data/facility.local.json</code> on this laptop. The night restarted: alerts cleared, residents back in bed. <a class="nw-link" href="/dashboard/">Open the nurse station →</a></div>`);
+      banner($('result'), 'ok', `${icon('check')}<div><b>Saved and applied.</b> Written to <code>data/facility.local.json</code> on this laptop. The night restarted: alerts cleared, residents back in bed.${cams}
+        <a class="nw-link" href="/dashboard/">Open the nurse station →</a></div>`);
     }
   } catch (e) {
     banner($('result'), 'bad', `${icon('siren')}<div><b>Not saved.</b> Couldn't reach the server (${esc(e.message)}).</div>`);
@@ -1110,6 +1123,46 @@ $('save').onclick = async () => {
     $('result').scrollIntoView({ block: 'center' }); $('result').setAttribute('tabindex', '-1'); $('result').focus({ preventScroll: true });
   }
 };
+
+// ------------------------------------------------------------------ what a save will clear, and keeping cameras off
+async function nightSnapshot() {
+  try {
+    const [st, rp] = await Promise.all([fetch('/api/state').then((r) => r.json()), fetch('/api/report').then((r) => r.json()).catch(() => null)]);
+    return { open: (st.alerts || []).length, drafts: rp?.totals?.records_draft ?? 0,
+      cameras: (st.cameras || []).map((c) => ({ id: c.id, label: c.label, enabled: c.enabled !== false, schedule: c.schedule || 'always' })) };
+  } catch { return null; }
+}
+function impactHTML(b) {
+  if (!b) return `<li class="warn">${icon('bell')}<span>Couldn't check tonight's alerts and records. Saving clears whatever is open.</span></li>`;
+  const li = (cls, ic, html) => `<li class="${cls}">${icon(ic)}<span>${html}</span></li>`;
+  const out = [];
+  out.push(b.open ? li('bad', 'siren', `<b>${b.open} open alert${b.open > 1 ? 's' : ''} will be cleared.</b> If someone is still out of bed, finish it on the nurse station first.`)
+    : li('ok', 'check', 'No open alerts right now.'));
+  out.push(b.drafts ? li('bad', 'note', `<b>${b.drafts} care record${b.drafts > 1 ? 's' : ''} not filed yet will be lost.</b> <a class="nw-link" href="/report/">File ${b.drafts > 1 ? 'them' : 'it'} in the shift report</a> first.`)
+    : li('ok', 'check', 'No unfiled care records.'));
+  const off = b.cameras.filter((c) => !c.enabled || c.schedule === 'night');
+  out.push(off.length ? li('ok', 'shield', `<b>Camera privacy stays as staff set it:</b> ${off.map((c) => `${esc(c.label)} (${c.enabled ? 'night only' : 'off'})`).join(', ')}. This page checks it after saving and puts it back if needed.`)
+    : li('ok', 'camera', 'All cameras are on and watching always; they stay that way.'));
+  return out.join('');
+}
+// Off must mean off: if the server switched a camera back on (or to always-on) while restarting the night,
+// put the staff's choice back right away. Servers that already keep camera states need nothing.
+async function keepCameraPrivacy(before, out) {
+  if (!before) return '';
+  const after = await nightSnapshot(); if (!after) return '';
+  const fixed = [];
+  for (const c of before.cameras) {
+    const now = after.cameras.find((x) => x.id === c.id); if (!now) continue;
+    if (now.enabled !== c.enabled || now.schedule !== c.schedule) {
+      const body = { camera: c.id, enabled: c.enabled, schedule: c.schedule, by: 'Settings (kept after save)' };
+      try { await NW.post('/api/camera/config', body); fixed.push(c.label); } catch { /* reported below */ }
+    }
+  }
+  const kept = before.cameras.filter((c) => !c.enabled || c.schedule === 'night');
+  if (fixed.length) return ` Camera settings restored after the restart: ${esc(fixed.join(', '))}.`;
+  if (kept.length) return ` Cameras kept as staff set them (${esc(kept.map((c) => `${c.label}: ${c.enabled ? 'night only' : 'off'}`).join(', '))}).`;
+  void out; return '';
+}
 
 window.addEventListener('beforeunload', (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 load();

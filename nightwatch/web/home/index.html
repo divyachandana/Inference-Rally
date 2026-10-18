@@ -125,9 +125,10 @@
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand"><div class="nw-brand-mark img"><img src="/assets/brand/logo.svg" alt="" width="38" height="38"></div><div><div class="nw-brand-name">NightWatch</div>
-    <div class="nw-brand-sub">On-device night elopement detection · everything runs on this laptop</div></div></div>
+  <a class="nw-brand" href="/home/" aria-current="page" style="color:inherit;text-decoration:none"><div class="nw-brand-mark img"><img src="/assets/brand/logo.svg" alt="" width="38" height="38"></div><div><div class="nw-brand-name">NightWatch</div>
+    <div class="nw-brand-sub">On-device night elopement detection · everything runs on this laptop</div></div></a>
   <div class="topright"><div class="nw-chips" id="topchips"></div><div data-nw-display></div></div>
+  <nav data-nw-nav style="flex-basis:100%"></nav>
 </header>
 
 <main>
@@ -193,7 +194,8 @@ const SCREENS = [
   { href: '/camera/', name: 'Hallway camera', icon: 'camera', p: 'Person detection on the doorway. Frames are analysed in memory, never saved.', key: 'cam' },
   { href: '/sim/', name: 'Presenter', icon: 'play', p: 'Drive sensors, the clock and scripted scenarios during a demo.' },
   { href: '/report/', name: 'Shift report', icon: 'report', p: 'Every alert tonight, response times and care-record drafts for handover.' },
-  { href: '/perf/', name: 'Performance', icon: 'chip', p: 'Measured ExecuTorch latency and energy, NPU vs CPU, on this laptop.' },
+  { href: '/perf/', name: 'Performance', icon: 'chip', p: 'Measure NPU vs CPU on this laptop: ExecuTorch latency and energy, from a button.', key: 'perf' },
+  { href: '/help/', name: 'Help', icon: 'bulb', p: 'How NightWatch works, for night staff, managers and families.' },
   { href: '/settings/', name: 'Settings', icon: 'user', p: 'Facility, night hours, escalation waits, residents, exits and cameras.' },
 ];
 
@@ -206,6 +208,21 @@ const SCENARIOS = [
 ];
 
 let state = null;
+let speedup = null;   // from /api/bench, only once a run has both an NPU and a CPU row
+async function loadBench() {
+  try {
+    const b = await fetch('/api/bench').then((r) => r.json());
+    const best = [];
+    for (const run of b.runs || []) {
+      const npu = run.results.find((r) => r.label === 'NPU'), cpu = run.results.find((r) => r.label === 'CPU');
+      if (npu?.p50_ms && cpu?.p50_ms) best.push({ x: cpu.p50_ms / npu.p50_ms, what: run.kind === 'detector' ? 'person detector' : 'normal-pattern model',
+        npu: npu.p50_ms.toFixed(run.kind === 'detector' ? 1 : 3), cpu: cpu.p50_ms.toFixed(run.kind === 'detector' ? 1 : 3), kind: run.kind });
+    }
+    // newest run per kind comes first in /api/bench; prefer the camera model, it's the heavy one
+    speedup = best.find((r) => r.kind === 'detector') || best[0] || null;
+    renderCards();
+  } catch { /* the card keeps its "measure" wording */ }
+}
 // Only touch the DOM when the markup changed, so polling never steals keyboard focus.
 const last = new Map();
 const put = (el, html) => { if (last.get(el) === html) return false; last.set(el, html); el.innerHTML = html; return true; };
@@ -216,9 +233,11 @@ function renderCards() {
     let tag = '';
     if (s.key === 'dash' && state) tag = open ? `<span class="tag is-alert">${open} OPEN ALERT${open > 1 ? 'S' : ''}</span>` : '<span class="tag is-ok">ALL CLEAR</span>';
     if (s.key === 'cam' && state) tag = camLive ? '<span class="tag is-ok">LIVE</span>' : '';
+    let p = s.p;
+    if (s.key === 'perf' && speedup) { p = `Measured on this laptop: the ${speedup.what} runs ${speedup.x.toFixed(1)}× faster on the NPU than the CPU (median ${speedup.npu} vs ${speedup.cpu} ms).`; tag = '<span class="tag is-ok">NPU MEASURED</span>'; }
     return `<a class="card${s.primary ? ' primary' : ''}" href="${s.href}">
       <span class="ic">${icon(s.icon)}</span><b>${esc(s.name)} ${tag}</b>
-      <span class="p">${esc(s.p)}<br><span class="path">${esc(s.href)}</span></span></a>`;
+      <span class="p">${esc(p)}<br><span class="path">${esc(s.href)}</span></span></a>`;
   }).join(''));
 }
 
@@ -296,7 +315,7 @@ function renderStatus(h) {
     const kind = { on: 'ok', hit: 'ok', off: 'off', paused: 'off', idle: 'warn' }[s.key] || 'off';
     const sched = c.schedule === 'night' ? 'Night only' : 'Always';
     rows.push(`<li><span class="k">${icon('camera')} ${esc(c.label)}</span>${st(kind, s.word, s.key === 'off' ? 'eye' : s.key === 'idle' ? 'clock' : 'check')}
-      <span class="s">${c.enabled ? 'On' : 'Off'} · ${sched} · ${c.live ? 'frames arriving' : 'no frames right now'}${s.sub ? ` · ${esc(s.sub)}` : ''}</span></li>`);
+      <span class="s">${s.sub ? esc(s.sub) : `${sched} · frames arriving, analysed in memory`}</span></li>`);
   }
   rows.push(`<li><span class="k">${icon('wifiOff')} Network</span>${h.lan ? st('ok', 'FACILITY WI-FI', 'check') : st('off', 'THIS LAPTOP ONLY', 'shield')}
     <span class="s">${h.lan ? 'Phones on the local network can connect. Nothing is sent to the internet.' : 'Only this laptop can open the pages. Add --lan for phones.'}</span></li>`);
@@ -352,6 +371,7 @@ async function load() {
   }
 }
 renderCards(); load(); setInterval(load, 3000);
+loadBench(); setInterval(loadBench, 20000);
 </script>
 </body>
 </html>
