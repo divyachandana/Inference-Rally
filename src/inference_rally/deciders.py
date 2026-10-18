@@ -1,16 +1,17 @@
 """Deciders: the "brains" behind racers.
 
 A decider receives the rendered prompt for a junction and returns the raw model reply
-plus timing. The race engine does not care whether the reply came from ExecuTorch,
-llama.cpp, GenieX or the simulator — that is what makes the Mac → Snapdragon switch a
-config change.
+plus timing. The race engine does not care whether the reply came from Gemma on the
+Snapdragon NPU (ExecuTorch + QNN), the simulator or the human player.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import math
 import random
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,10 +21,17 @@ from inference_rally.errors import DeciderError, DecisionTimeoutError
 from inference_rally.maze import Maze, Move
 from inference_rally.metrics import TokenMeter
 from inference_rally.models import DecisionMetrics, Observation, RacerSpec, SimProfile
+from inference_rally.qnn_host import QnnHost, QnnHostError
 
 HUMAN_TIMEOUT_S = 20.0
-MODEL_TIMEOUT_S = 30.0
-LOCAL_API_KEY = "local"  # local servers ignore the key, but the client requires one
+WARMUP_SEQ_LEN = 64  # "Say ok." plus the chat template, with room for a short reply
+# Control text the host streams as plain text: Gemma/Qwen end-of-turn markers and Qwen3's
+# thinking block (empty with /no_think).
+CONTROL_TEXT = re.compile(r"<think>.*?</think>|<turn\|>|<\|im_end\|>", re.DOTALL)
+INITIAL_TOKENS_PER_CHAR = 0.5  # pessimistic until the first real prompt is measured
+PROMPT_SAFETY = 1.15
+PROMPT_MARGIN_TOKENS = 16
+MIN_LEARN_CHARS = 100  # tiny prompts are mostly chat template: a misleading ratio
 
 TokenCallback = Callable[[TokenMeter], None]
 
@@ -123,77 +131,96 @@ class SimulatedDecider:
         return max(0.0, seconds * self._rng.uniform(1 - spread, 1 + spread))
 
 
-class OpenAIDecider:
-    """A real model behind any OpenAI-compatible server (llama.cpp, ExecuTorch, GenieX).
+class PromptBudget:
+    """Chooses the host's ``seq_len`` so a reply is capped at ``max_tokens`` without overflow.
 
-    Replies are streamed so TTFT and tokens/sec are measured on our side, the same way
-    for every runtime.
+    The host has no max-new-tokens setting: generation stops at ``seq_len`` (prompt plus
+    reply). A ``seq_len`` below the prompt length aborts the host process, so the prompt
+    size is estimated from its characters with a ratio learned from the host's own token
+    counts, plus a safety margin.
     """
 
-    def __init__(self, spec: RacerSpec, client: object | None = None) -> None:
+    def __init__(self, max_seq_len: int) -> None:
+        """Start with a conservative ratio until the host reports real counts."""
+        self._max_seq_len = max_seq_len
+        self._tokens_per_char = INITIAL_TOKENS_PER_CHAR
+
+    def seq_len(self, prompt_chars: int, max_tokens: int) -> int:
+        """Position ceiling for a prompt of ``prompt_chars`` and a ``max_tokens`` reply."""
+        prompt_tokens = math.ceil(prompt_chars * self._tokens_per_char * PROMPT_SAFETY)
+        return min(self._max_seq_len, prompt_tokens + PROMPT_MARGIN_TOKENS + max_tokens)
+
+    def learn(self, prompt_chars: int, prompt_tokens: int | None) -> None:
+        """Adopt the ratio measured on a real junction prompt."""
+        if prompt_tokens and prompt_chars >= MIN_LEARN_CHARS:
+            self._tokens_per_char = prompt_tokens / prompt_chars
+
+
+class QnnDecider:
+    """A model on the Snapdragon NPU via ExecuTorch's QNN backend (``qnn_llm_host``).
+
+    Pieces are streamed over the host's named pipe, so TTFT and tokens/sec are timed on
+    our side, the same way as for every other racer.
+    """
+
+    def __init__(
+        self, spec: RacerSpec, host: QnnHost, budget: PromptBudget, prompt_suffix: str = ""
+    ) -> None:
         """Create a decider for one racer.
 
         Args:
-            spec: Racer with ``base_url`` and ``model`` set.
-            client: Injected ``AsyncOpenAI``-like client (tests); built from ``spec`` if omitted.
-
-        Raises:
-            DeciderError: If ``base_url``/``model`` are missing or ``openai`` is not installed.
+            spec: Racer with ``runtime: qnn``.
+            host: Shared host process for the racer's model.
+            budget: Prompt-size estimator (one per host, so it keeps what it learned).
+            prompt_suffix: Appended to every junction prompt (e.g. Qwen3's ``/no_think``).
         """
-        if not spec.base_url or not spec.model:
-            raise DeciderError(f"Racer {spec.id!r} needs base_url and model")
         self._spec = spec
-        if client is None:
-            try:
-                # Imported lazily: only real-model profiles need the package.
-                from openai import AsyncOpenAI
-            except ImportError as exc:
-                raise DeciderError("Install the 'openai' package to race real models") from exc
-            client = AsyncOpenAI(
-                base_url=spec.base_url, api_key=LOCAL_API_KEY, timeout=MODEL_TIMEOUT_S, max_retries=0
-            )
-        self._client = client
+        self._host = host
+        self._budget = budget
+        self._prompt_suffix = prompt_suffix
 
     async def warmup(self) -> None:
-        """One tiny request so model loading / GPU shader compilation happens before GO."""
-        await self._complete([{"role": "user", "content": "Say ok."}], max_tokens=1, on_token=None)
+        """Load the model onto the NPU (first race only) and run one tiny request."""
+        try:
+            await asyncio.to_thread(self._host.start)
+        except QnnHostError as exc:
+            raise DeciderError(f"{self._spec.id}: {exc}") from exc
+        await self._complete("", "Say ok.", WARMUP_SEQ_LEN, on_token=None)
 
     async def decide(
         self, messages: list[dict[str, str]], obs: Observation, on_token: TokenCallback
     ) -> DecisionResult:
         """Stream the model's answer for one junction."""
-        return await self._complete(messages, self._spec.max_tokens, on_token)
+        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+        user = "\n".join(m["content"] for m in messages if m["role"] != "system")
+        user += self._prompt_suffix
+        chars = len(system) + len(user)
+        result, prompt_tokens = await self._complete(
+            system, user, self._budget.seq_len(chars, self._spec.max_tokens), on_token
+        )
+        self._budget.learn(chars, prompt_tokens)
+        return result
 
     async def _complete(
-        self, messages: list[dict[str, str]], max_tokens: int, on_token: TokenCallback | None
-    ) -> DecisionResult:
+        self, system: str, prompt: str, seq_len: int, on_token: TokenCallback | None
+    ) -> tuple[DecisionResult, int | None]:
+        loop = asyncio.get_running_loop()
         meter = TokenMeter()
-        parts: list[str] = []
-        usage_tokens: int | None = None
-        try:
-            stream = await self._client.chat.completions.create(  # type: ignore[attr-defined]
-                model=self._spec.model,
-                messages=messages,
-                temperature=0,
-                max_tokens=max_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    parts.append(chunk.choices[0].delta.content)
-                    # Local servers stream one token per chunk, so a chunk is a token.
-                    meter.add_tokens(1)
-                    if on_token:
-                        on_token(meter)
-                if getattr(chunk, "usage", None):
-                    usage_tokens = chunk.usage.completion_tokens
-        except Exception as exc:  # noqa: BLE001 - any client/network failure means "offline"
-            raise DeciderError(f"{self._spec.id}: {exc}") from exc
 
-        if usage_tokens:
-            meter.tokens = usage_tokens  # exact count when the server reports it
-        return DecisionResult(text="".join(parts), metrics=meter.finish())
+        def on_delta(_: str) -> None:
+            # Runs on the pipe thread: time the token here, update the HUD on the loop.
+            meter.add_tokens(1)
+            if on_token:
+                loop.call_soon_threadsafe(on_token, meter)
+
+        try:
+            reply = await asyncio.to_thread(self._host.generate, system, prompt, seq_len, on_delta)
+        except QnnHostError as exc:
+            raise DeciderError(f"{self._spec.id}: {exc}") from exc
+        if reply.generated_tokens:
+            meter.tokens = reply.generated_tokens  # exact count from the host
+        text = CONTROL_TEXT.sub("", reply.text).strip()
+        return DecisionResult(text=text, metrics=meter.finish()), reply.prompt_tokens
 
 
 class HumanDecider:

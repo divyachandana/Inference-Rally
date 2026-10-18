@@ -53,7 +53,8 @@ def test_prompt_lists_only_available_roads() -> None:
         ],
     )
     user = build_messages(obs)[1]["content"]
-    assert "- left (goes west)" in user
-    assert "- right (goes east, visited 2x)" in user
+    assert "- left (goes west, new road)" in user
+    assert "- right (goes east, already driven 2x)" in user
+    assert "You are driving in circles. Take a new road: left." in user
     assert "straight" not in user
-    assert '"move": "left|right"' in user
+    assert "Pick exactly one of: left, right." in user

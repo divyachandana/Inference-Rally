@@ -5,7 +5,6 @@ description = "On-device AI models race through a 3D maze — ExecuTorch Hackath
 requires-python = ">=3.10"
 dependencies = [
     "networkx>=3.2",
-    "openai>=1.40",
     "pydantic>=2.6",
     "pyyaml>=6.0",
     "sse-starlette>=2.1",

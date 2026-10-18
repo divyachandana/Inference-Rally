@@ -1,14 +1,16 @@
-"""Tests for the real-model and human deciders (no network: fake client, fake player)."""
+"""Tests for the NPU and human deciders (no hardware: fake host, fake player)."""
 
 import asyncio
-from types import SimpleNamespace
+import time
+from collections.abc import Callable
 
 import pytest
 
-from inference_rally.deciders import HumanDecider, OpenAIDecider
+from inference_rally.deciders import HumanDecider, PromptBudget, QnnDecider
 from inference_rally.errors import DeciderError, DecisionTimeoutError
 from inference_rally.maze import Heading, Move
 from inference_rally.models import Observation, OptionView, RacerSpec
+from inference_rally.qnn_host import HostReply, QnnHostError
 
 OBS = Observation(
     node=(1, 1),
@@ -21,68 +23,84 @@ OBS = Observation(
     ],
 )
 SPEC = RacerSpec(
-    id="llama_gpu",
-    name="Llama",
-    device="GPU",
-    runtime="openai",
-    color="#7F77DD",
-    base_url="http://127.0.0.1:1/v1",
-    model="llama",
+    id="npu",
+    name="Gemma",
+    device="NPU",
+    runtime="qnn",
+    color="#1D9E75",
+    qnn_model="gemma",
 )
 
 
-def _chunk(content: str | None = None, usage: int | None = None) -> SimpleNamespace:
-    choices = [] if content is None else [SimpleNamespace(delta=SimpleNamespace(content=content))]
-    return SimpleNamespace(
-        choices=choices,
-        usage=None if usage is None else SimpleNamespace(completion_tokens=usage),
-    )
+class FakeHost:
+    """Mimics ``QnnHost``: streams pieces through ``on_delta`` like the named pipe does."""
 
+    def __init__(self, pieces: list[str], prompt_tokens: int = 100, fail: bool = False) -> None:
+        self.pieces, self.prompt_tokens, self.fail = pieces, prompt_tokens, fail
+        self.calls: list[tuple[str, str, int]] = []
 
-class FakeClient:
-    """Mimics ``AsyncOpenAI().chat.completions.create(stream=True)``."""
-
-    def __init__(self, pieces: list[str], usage: int | None = None, fail: bool = False) -> None:
-        self.pieces, self.usage, self.fail = pieces, usage, fail
-        self.calls: list[dict[str, object]] = []
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
-
-    async def _create(self, **kwargs: object) -> object:
-        self.calls.append(kwargs)
+    def start(self) -> None:
         if self.fail:
-            raise ConnectionError("connection refused")
+            raise QnnHostError("host exited")
 
-        async def stream():  # type: ignore[no-untyped-def]
-            for piece in self.pieces:
-                await asyncio.sleep(0.001)
-                yield _chunk(piece)
-            if self.usage is not None:
-                yield _chunk(usage=self.usage)
+    def generate(
+        self, system_prompt: str, prompt: str, seq_len: int, on_delta: Callable[[str], None]
+    ) -> HostReply:
+        self.calls.append((system_prompt, prompt, seq_len))
+        if self.fail:
+            raise QnnHostError("pipe broken")
+        for piece in self.pieces:
+            time.sleep(0.001)
+            on_delta(piece)
+        return HostReply("".join(self.pieces), self.prompt_tokens, len(self.pieces))
 
-        return stream()
+
+def _decider(host: FakeHost) -> QnnDecider:
+    return QnnDecider(SPEC, host, PromptBudget(max_seq_len=3800))  # type: ignore[arg-type]
 
 
-def test_openai_decider_streams_and_times_reply() -> None:
-    client = FakeClient(['{"move"', ': "right"', ', "why": "east"}'], usage=11)
+MESSAGES = [{"role": "system", "content": "sys"}, {"role": "user", "content": "u" * 300}]
+
+
+def test_qnn_decider_streams_and_times_reply() -> None:
+    host = FakeHost(['{"move"', ': "right"', ', "why": "east"}', "<turn|>"])
     seen: list[int] = []
-    decider = OpenAIDecider(SPEC, client=client)
-    result = asyncio.run(decider.decide([{"role": "user", "content": "hi"}], OBS, lambda m: seen.append(m.tokens)))
-    assert result.text == '{"move": "right", "why": "east"}'
-    assert seen == [1, 2, 3]  # live updates while streaming
-    assert result.metrics.tokens == 11  # server-reported usage wins over chunk count
-    assert result.metrics.tps > 0
-    assert client.calls[0]["stream"] is True and client.calls[0]["temperature"] == 0
+
+    async def scenario() -> object:
+        result = await _decider(host).decide(MESSAGES, OBS, lambda m: seen.append(m.tokens))
+        await asyncio.sleep(0)  # let the loop run the last scheduled HUD update
+        return result
+
+    result = asyncio.run(scenario())
+    assert result.text == '{"move": "right", "why": "east"}'  # type: ignore[attr-defined]
+    assert seen == [1, 2, 3, 4]  # live updates while streaming
+    assert result.metrics.tokens == 4  # type: ignore[attr-defined]
+    assert host.calls[0][0] == "sys" and host.calls[0][1] == "u" * 300
 
 
-def test_openai_decider_reports_offline_server() -> None:
-    decider = OpenAIDecider(SPEC, client=FakeClient([], fail=True))
+def test_qnn_decider_adds_suffix_and_strips_qwen_control_text() -> None:
+    host = FakeHost(["<think>\n\n</think>\n\n", '{"move": "left", "why": "west"}', "<|im_end|>"])
+    decider = QnnDecider(SPEC, host, PromptBudget(3800), " /no_think")  # type: ignore[arg-type]
+    result = asyncio.run(decider.decide(MESSAGES, OBS, lambda _: None))
+    assert result.text == '{"move": "left", "why": "west"}'
+    assert host.calls[0][1].endswith(" /no_think")
+
+
+def test_qnn_decider_reports_offline_host() -> None:
     with pytest.raises(DeciderError):
-        asyncio.run(decider.warmup())
+        asyncio.run(_decider(FakeHost([], fail=True)).warmup())
 
 
-def test_openai_decider_requires_endpoint() -> None:
-    with pytest.raises(DeciderError):
-        OpenAIDecider(SPEC.model_copy(update={"base_url": None}), client=FakeClient([]))
+def test_prompt_budget_learns_ratio_and_never_starves_prompt() -> None:
+    budget = PromptBudget(max_seq_len=3800)
+    first = budget.seq_len(400, 48)
+    assert first >= 400 * 0.5 + 48  # pessimistic before any measurement
+    budget.learn(400, 120)
+    tight = budget.seq_len(400, 48)
+    assert 120 + 48 <= tight < first
+    budget.learn(10, 50)  # tiny warmup prompts are ignored
+    assert budget.seq_len(400, 48) == tight
+    assert PromptBudget(max_seq_len=100).seq_len(4000, 48) == 100
 
 
 def test_human_decider_accepts_legal_move_on_their_turn() -> None:

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from inference_rally.maze import Heading, Move
 
 Device = Literal["NPU", "GPU", "CPU", "HUMAN"]
-Runtime = Literal["simulated", "openai", "human"]
+Runtime = Literal["simulated", "qnn", "human"]
 GridPoint = tuple[int, int]
 
 
@@ -33,7 +33,7 @@ class SimProfile(BaseModel):
 
 
 class RacerSpec(BaseModel):
-    """One racer: a model running on one compute unit behind one endpoint."""
+    """One racer: a model on one compute unit, a simulated model, or the human player."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -43,8 +43,7 @@ class RacerSpec(BaseModel):
     runtime: Runtime
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     label: str | None = Field(default=None, max_length=10, description="Short tag, e.g. '1B GPU'")
-    base_url: str | None = None
-    model: str | None = None
+    qnn_model: str | None = Field(default=None, description="Key in qnn.models (runtime: qnn)")
     max_tokens: int = Field(default=48, ge=8, le=512, description="Reply cap for real models")
     sim: SimProfile | None = None
 

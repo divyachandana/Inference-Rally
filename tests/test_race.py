@@ -18,7 +18,7 @@ def _run(seed: int = 16) -> tuple[list[RaceEvent], dict[str, object]]:
     maze = generate_maze(
         settings.maze_width, settings.maze_height, seed, settings.loop_ratio, settings.branchiness
     )
-    specs: list[RacerSpec] = [s.model_copy(update={"sim": FAST}) for s in config.racers("demo")]
+    specs: list[RacerSpec] = [s.model_copy(update={"sim": FAST}) for s in config.racers("sim")]
     events: list[RaceEvent] = []
 
     def emit(event: RaceEvent) -> None:
@@ -33,7 +33,7 @@ def test_every_racer_finishes_with_a_unique_place() -> None:
     events, results = _run()
     finishes = [e for e in events if e.type == "finish"]
     assert sorted(e.place for e in finishes) == [1, 2, 3]
-    assert set(results) == {"npu", "gpu", "cpu"}
+    assert set(results) == {"gemma", "qwen", "gpu"}
 
 
 def test_event_stream_is_well_ordered() -> None:

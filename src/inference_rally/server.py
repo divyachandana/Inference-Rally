@@ -29,9 +29,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from inference_rally import qnn_host
 from inference_rally.config import AppConfig, build_decider, load_config
-from inference_rally.errors import ConfigError
 from inference_rally.deciders import HumanDecider
+from inference_rally.errors import ConfigError
 from inference_rally.maze import Move, generate_maze
 from inference_rally.models import RaceEvent
 from inference_rally.race import RaceEngine
@@ -106,7 +107,7 @@ class RaceController:
             branchiness=settings.branchiness,
         )
         racers = [
-            (spec, build_decider(spec, maze, settings.seed))
+            (spec, build_decider(spec, maze, settings.seed, self._config.qnn))
             for spec in self._config.racers(profile)
         ]
         self._humans = {spec.id: d for spec, d in racers if isinstance(d, HumanDecider)}
@@ -218,10 +219,25 @@ def create_app(config: AppConfig) -> Starlette:
     @asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         await controller.preview()
+        npu_loading = asyncio.create_task(_prestart_npu_hosts(config))
         yield
+        npu_loading.cancel()
         await controller.stop()  # don't leave a race task running after Ctrl+C
+        await asyncio.to_thread(qnn_host.close_all)  # free the NPU
 
     return Starlette(routes=routes, lifespan=lifespan)
+
+
+async def _prestart_npu_hosts(config: AppConfig) -> None:
+    """Load the NPU models while the attract screen shows, so the first race starts fast."""
+    if config.qnn is None:
+        return
+    keys = {s.qnn_model for p in config.profiles.values() for s in p if s.runtime == "qnn"}
+    for key in sorted(k for k in keys if k and k in config.qnn.models):
+        try:
+            await asyncio.to_thread(qnn_host.get_host(config.qnn, key).start)
+        except qnn_host.QnnHostError:
+            logger.warning("NPU host for %s did not start", key, exc_info=True)
 
 
 async def _json_body(request: Request) -> dict[str, object]:
