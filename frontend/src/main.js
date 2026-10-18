@@ -2,7 +2,8 @@
  * Entry point: wires the DOM, the event stream, keyboard controls and the game.
  *
  * Keys: Enter = start / rematch · S = stop · N = new maze · G = demo/play/unfair mode · M = mute
- *       P = retro pixels on/off · 1-3 = focus one racer · 0 / Esc = split screen
+ *       P = retro pixels on/off · 1-3 = focus one racer · 4 = map full screen
+ *       0 / Esc = split screen
  *       Arrows = drive (play mode: ← left, ↑ straight, → right, ↓ U-turn)
  */
 
@@ -43,6 +44,10 @@ const stream = new EventStream(
       showMode(modeOf(event.racers));
     }
     game.handle(event);
+    if (event.type === 'race_init') {
+      // The map view starts with crisp pixels; keep the button honest.
+      document.querySelector('#btn-retro').textContent = game.views.retro ? 'RETRO ON' : 'RETRO OFF';
+    }
   },
   (connected) => {
     dom.status.textContent = connected ? 'LIVE' : 'OFFLINE';
@@ -90,6 +95,7 @@ const actions = {
   1: () => game.focus(0),
   2: () => game.focus(1),
   3: () => game.focus(2),
+  4: () => game.focus(dom.panes.length - 1),
   0: () => game.focus(null),
   Escape: () => game.focus(null),
 };

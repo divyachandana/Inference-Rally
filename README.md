@@ -1,6 +1,6 @@
 # Inference Rally
 
-> On-device AI models race taxis through a 3D maze. Every turn is a decision; every second is compute.
+> On-device AI models race taxis through real San Francisco streets. Every turn is a decision; every second is compute.
 
 ExecuTorch Hackathon — Compute Track (Copilot+ PC, Snapdragon X Elite).
 Each racer is the same (or a different) model on a different compute unit — **NPU vs GPU**.
@@ -23,6 +23,31 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 | UNFAIR mode: the rogue's drone scouts a junction | Race results |
 |---|---|
 | ![UNFAIR mode drone peek](docs/images/unfair-drone.jpg) | ![Results screen](docs/images/results.jpg) |
+
+## The map: real San Francisco streets
+
+The race runs on real streets from [OpenStreetMap](https://www.openstreetmap.org): by default North
+Beach, Jones St to Kearny St and Vallejo St to Chestnut St. Each race closes some of them with
+barricades, so it is still a maze (`N` closes a different set). Buildings take their block's real
+height, parks are parks, the junction banner shows the real cross streets, and the Golden Gate
+Bridge, Transamerica Pyramid, Salesforce Tower, Coit Tower, Alcatraz and the downtown skyline stand
+in their real directions. The map panel is the real OpenStreetMap street map, with each car's
+dot and trail, the best route and the closed streets on it (`4` shows it full screen). The driving
+views show the same real map like a navigation app: streets with their names, parks and grey
+buildings at their real heights, drawn from OpenStreetMap data. Add `?view=city` to the page
+address for the pixel-art city instead.
+
+Change the area with one command, then point `street_map` in `racers.yaml` at the new file:
+
+```bash
+python scripts/fetch_map.py sf-alamo-square    # ready: sf-north-beach, sf-alamo-square, sf-mission
+python scripts/fetch_map.py my-area --bbox 37.79,-122.42,37.80,-122.40 --title "My area"
+```
+
+Any area with a street grid works; the script keeps the 7 x 7 junctions nearest its middle
+(`--size` changes that). `loop_ratio: 1` in `racers.yaml` keeps every real street open; removing
+`street_map` brings back the random grid. Map data © OpenStreetMap contributors, under the
+[Open Database License](https://opendatacommons.org/licenses/odbl/).
 
 ## Three modes
 
@@ -149,6 +174,7 @@ folder (next to its `qnn_executorch_backend.dll`).
 | M | Sound on/off |
 | P | Retro pixels on/off |
 | 1 / 2 / 3 | Focus one racer full screen |
+| 4 | Street map full screen |
 | 0 / Esc | Back to split screen |
 
 ## Layout
@@ -157,14 +183,16 @@ folder (next to its `qnn_executorch_backend.dll`).
   - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, models on the NPU, human
   - `qnn_host.py` launches `qnn_llm_host.exe` and speaks its named-pipe protocol
   - `rogue.py` spots useful cheats and describes them for Laya · `laya.py` runs Laya via `scripts/laya_bridge.py`
+  - `city_map.py` OpenStreetMap data → real street grid, block heights and parks, skyline
   - `prompts.py` junction prompt + reply parsing · `metrics.py` TTFT / tokens/sec timing
   - `models.py` typed config + event schema · `server.py` Starlette + Server-Sent Events
 - `frontend/` – Three.js split-screen game (Vite)
-  - `world/` maze, scenery, procedural pixel textures · `cars/` car model, driving, option arrows
+  - `world/` maze, city blocks, bay area and landmarks (placed by latitude/longitude), procedural pixel textures · `cars/` car model, driving, option arrows
   - `render/` split-screen viewports, overview map · `hud/` HUD, leaderboard, overlays · `audio/` chiptune synth
 - `racers.yaml` – race settings, NPU bundle and models (`qnn:`) and racer profiles (`demo`, `play`, `sim`)
 - `tests/` – pytest suite (game logic runs offline with simulated racers)
 - `scripts/` – `dev.ps1` (Windows) / `dev.sh` run server + UI
+- `maps/` – made by `scripts/fetch_map.py`: street maps (`<area>.json`), map pictures (`tiles/`), drawn-map data (`features/`); `areas.yaml` names the ready areas
 - `docs/` – plan, architecture, coding standards
 
 ## Checks
