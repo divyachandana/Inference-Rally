@@ -5,9 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NightWatch · Home</title>
 <script src="/assets/auth.js"></script>
+<script src="/assets/a11y.js"></script>
 <link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/assets/a11y.css">
+<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png">
 <style>
   .nw-topbar { justify-content: space-between; }
+  .nw-brand-mark.img { background: none; border: 0; }
+  .nw-brand-mark.img img { width: 38px; height: 38px; display: block; }
+  .topright { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; justify-content: flex-end; }
+
+  /* tonight so far */
+  .tonight { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+  .tonight .t { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--nw-line); background: var(--nw-bg-2); min-width: 0; text-decoration: none; color: inherit; display: block; }
+  .tonight a.t:hover { border-color: var(--nw-line-strong); background: var(--nw-surface-2); }
+  .tonight .k { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--nw-muted); display: flex; gap: 6px; align-items: center; }
+  .tonight .v { font: 750 30px/1.1 var(--nw-font-display); font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .tonight .v small { font-size: 14px; color: var(--nw-muted); font-weight: 600; margin-left: 3px; }
+  .tonight .s { font-size: 12.5px; color: var(--nw-ink-2); margin-top: 2px; }
+  .tonight .t.is-warn { border-color: rgba(246,195,68,.5); } .tonight .t.is-warn .v { color: var(--nw-l1); }
+  .tonight .t.is-bad { border-color: rgba(255,82,99,.55); } .tonight .t.is-bad .v { color: var(--nw-l3); }
+  .tonight .t.is-good .v { color: var(--nw-ok); }
+  .tonight-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: -8px; }
+
+  /* phone link + QR */
+  .phone-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 400px) { .phone-grid { grid-template-columns: minmax(0, 1fr); } }
+  .qr { width: 156px; padding: 10px; background: #fff; border-radius: 14px; box-shadow: 0 0 0 1px var(--nw-line-strong); }
+  .qr svg { display: block; width: 100%; height: auto; }
+  .qr-cap { margin-top: 6px; font-size: 12px; color: var(--nw-muted); text-align: center; width: 156px; }
+  .linkrow { margin-top: 16px; display: grid; gap: 8px; justify-items: start; padding-top: 14px; border-top: 1px solid var(--nw-line); }
+  .linkrow .k { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--nw-muted); }
+  .bigurl { font: 800 clamp(17px, 1.55vw, 23px)/1.25 var(--nw-mono); max-width: 100%; color: var(--nw-accent); overflow-wrap: anywhere; letter-spacing: -.01em; user-select: all; }
+  .bigurl .host { color: var(--nw-ink); }
   main { max-width: 1240px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 18px;
          grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; }
   main > * { min-width: 0; }
@@ -94,9 +125,9 @@
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">NightWatch</div>
+  <div class="nw-brand"><div class="nw-brand-mark img"><img src="/assets/brand/logo.svg" alt="" width="38" height="38"></div><div><div class="nw-brand-name">NightWatch</div>
     <div class="nw-brand-sub">On-device night elopement detection · everything runs on this laptop</div></div></div>
-  <div class="nw-chips" id="topchips"></div>
+  <div class="topright"><div class="nw-chips" id="topchips"></div><div data-nw-display></div></div>
 </header>
 
 <main>
@@ -110,6 +141,9 @@
     <span class="nw-mode" id="mode"></span>
     <div class="clock" id="clock" aria-label="Facility clock">--:--</div>
   </section>
+
+  <div class="tonight-head"><h2 class="nw-panel-title" id="t-tonight">Tonight so far</h2><a class="nw-link" href="/report/" style="font-size:13px">Full shift report →</a></div>
+  <section class="tonight" id="tonight" aria-labelledby="t-tonight" aria-live="off"></section>
 
   <div class="col">
     <section class="nw-panel" aria-labelledby="t-screens">
@@ -148,10 +182,10 @@
 </dialog>
 
 <script src="/assets/nw.js"></script>
+<script src="/home/qr.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const { esc, icon } = NW;
-$('logo').innerHTML = icon('logo');
 
 const SCREENS = [
   { href: '/dashboard/', name: 'Nurse station', icon: 'bell', p: 'Live floor plan, open alerts and the escalation ladder. Put this on the big screen.', primary: true, key: 'dash' },
@@ -227,18 +261,24 @@ function renderPhone(h) {
   }
   const pin = String(ph.pin || '').replace(/\D/g, '');
   $('paired').textContent = `${ph.paired} phone${ph.paired === 1 ? '' : 's'} paired`;
-  const url = ph.url ? `<div class="url"><output id="url" aria-label="Staff phone address">${esc(ph.url)}</output>
-      <button class="nw-btn nw-btn--primary" id="copy" type="button">${icon('note')}Copy address</button></div>`
+  const m = ph.url ? /^(https?:\/\/)([^/]+)(.*)$/.exec(ph.url) : null;
+  const qr = ph.url && window.NWQR ? NWQR.svg(ph.url, { title: `QR code for ${ph.url}` }) : null;
+  const pinHTML = `<div class="pin"><div><div class="k">Pairing PIN</div><div class="digits nw-num" aria-label="PIN ${pin.split('').join(' ')}">${esc(pin)}</div></div></div>`;
+  const steps = `<ol class="steps"><li>Join the phone to the facility Wi-Fi.</li><li>${ph.url ? 'Scan the code with its camera, or type the phone link.' : 'Once in --lan mode, scan the code shown here or type the link.'}</li><li>Enter the PIN once. The phone stays paired.</li></ol>`;
+  const body = ph.url ? `<div class="phone-grid">
+      ${qr ? `<div><div class="qr">${qr}</div><div class="qr-cap">Scan with the phone camera</div></div>` : ''}
+      <div style="min-width:0">${pinHTML.replace('class="pin"', 'class="pin" style="margin-top:0"')}${steps}</div></div>
+    <div class="linkrow"><div class="k">Phone link</div>
+      <output id="url" class="bigurl" aria-label="Staff phone address">${m ? `${esc(m[1])}<span class="host">${esc(m[2])}</span>${esc(m[3])}` : esc(ph.url)}</output>
+      <button class="nw-btn nw-btn--primary" id="copy" type="button">${icon('note')}Copy phone link</button></div>`
     : `<div class="notice"><b>Phones can't connect yet.</b> The server is only listening on this laptop.
-       Restart it with <code>--lan</code> (or run <code>demo.ps1</code>) so phones on the facility Wi-Fi can open <code>/staff/</code>. It still never leaves the building.</div>`;
-  if (!put($('phone'), `${url}
-    <div class="pin"><div><div class="k">Pairing PIN</div><div class="digits nw-num" aria-label="PIN ${pin.split('').join(' ')}">${esc(pin)}</div></div></div>
-    <ol class="steps"><li>Join the phone to the facility Wi-Fi.</li><li>${ph.url ? 'Open the address above in its browser.' : 'Once in --lan mode, open the address shown here in its browser.'}</li><li>Enter the PIN once. The phone stays paired.</li></ol>`)) return;
+       Restart it with <code>--lan</code> (or run <code>demo.ps1</code>) so phones on the facility Wi-Fi can open <code>/staff/</code>. It still never leaves the building.</div>${pinHTML}${steps}`;
+  if (!put($('phone'), body)) return;
   const c = $('copy');
   if (c) c.onclick = async () => {
     try { await navigator.clipboard.writeText(ph.url); }
     catch { const r = document.createRange(); r.selectNodeContents($('url')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); }
-    c.innerHTML = `${icon('check')}Copied`; setTimeout(() => { if (c.isConnected) c.innerHTML = `${icon('note')}Copy address`; }, 1800);
+    c.innerHTML = `${icon('check')}Copied`; setTimeout(() => { if (c.isConnected) c.innerHTML = `${icon('note')}Copy phone link`; }, 1800);
   };
 }
 
@@ -282,14 +322,29 @@ function renderTop(h) {
   if (!$('topchips').querySelector('.nw-offline')) NW.offlineBadge($('topchips'));
 }
 
+function renderTonight(r) {
+  if (!r) return;
+  const t = r.totals, med = r.response_s?.median;
+  const tile = (k, ic, v, unit, sub, cls = '', href = '') => `<${href ? `a href="${href}"` : 'div'} class="t ${cls}"><div class="k">${icon(ic)}${k}</div>
+    <div class="v nw-num">${esc(v)}${unit ? `<small>${unit}</small>` : ''}</div><div class="s">${sub}</div></${href ? 'a' : 'div'}>`;
+  put($('tonight'), [
+    tile('Alerts', 'bell', t.alerts, '', t.open ? `<b>${t.open}</b> still open` : t.alerts ? 'all handled' : 'quiet night so far', t.open ? 'is-warn' : t.alerts ? '' : 'is-good', '/dashboard/'),
+    tile('Median response', 'clock', med == null ? '–' : Math.round(med), med == null ? '' : 'sec', r.response_s?.count ? `from ${r.response_s.count} acknowledgement${r.response_s.count > 1 ? 's' : ''}` : 'nobody had to respond yet'),
+    tile('Reached emergency', 'siren', t.reached_emergency, '', t.went_outside ? `<b>${t.went_outside}</b> went outside` : 'nobody went outside', t.reached_emergency ? 'is-bad' : ''),
+    tile('Records to file', 'note', t.records_draft, '', `${t.records_filed} filed in the care team's taxonomy`, t.records_draft ? 'is-warn' : '', '/report/'),
+    tile('Settled on their own', 'bed', t.settled_on_their_own, '', `${t.visits_logged} daytime visit${t.visits_logged === 1 ? '' : 's'} logged`),
+  ].join(''));
+}
+
 async function load() {
   try {
-    const [hr, sr] = await Promise.all([fetch('/api/health'), fetch('/api/state')]);
+    const [hr, sr, rr] = await Promise.all([fetch('/api/health'), fetch('/api/state'), fetch('/api/report').catch(() => null)]);
     if (!hr.ok) throw new Error(hr.status === 401 ? 'This device is not paired yet.' : `Server answered ${hr.status}`);
     const h = await hr.json();
     state = sr.ok ? await sr.json() : null;
     $('err').classList.remove('is-on');
     renderTop(h); renderCards(); renderPhone(h); renderStatus(h);
+    if (rr && rr.ok) renderTonight(await rr.json());
   } catch (e) {
     const el = $('err'); el.classList.add('is-on');
     el.textContent = `Can't reach the NightWatch server on this laptop (${e.message}). Is nightwatch/server.py running?`;
