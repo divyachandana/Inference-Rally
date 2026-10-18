@@ -11,7 +11,8 @@ API (JSON):
     POST /api/pair      {"pin": "123456", "name": "Night nurse phone"} -> {"token"}   (other devices must pair;
                         then send header X-NightWatch-Token on every /api/ call. The laptop itself is trusted.)
     GET  /api/state
-    GET  /api/bench     benchmark runs from nightwatch/bench/benchmark.py (newest first)
+    GET  /api/bench     benchmark runs from nightwatch/bench/benchmark.py (newest first) + the running job
+    POST /api/bench/run {"kind": "detector"|"pattern", "seconds": 10}  start one (laptop only)
     GET  /api/resident?id=R-07   profile, now, last 30 min history, tonight's alerts
     GET  /api/settings  /  POST /api/settings (laptop only; saved to git-ignored data/facility.local.json)
     GET  /api/health    models, cameras, uptime; plus phone PIN/address for the laptop itself
@@ -89,7 +90,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/report":
             return self._json(ENGINE.report())
         if self.path == "/api/bench":
-            return self._json(_bench_runs())
+            return self._json(_bench_runs() | {"job": {k: v for k, v in BENCH_JOB.items() if k != "cmd"}})
         if self.path in ("", "/"):
             self.send_response(302)
             self.send_header("Location", "/home/" if (HERE / "web" / "home" / "index.html").exists() else "/dashboard/")
@@ -129,6 +130,10 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/record":
                 out = ENGINE.confirm_record(int(body["alert"]), str(body.get("affect", "")), str(body.get("intervention", "")),
                                             body.get("nondrug_alt") or None, str(body.get("note", "")), str(body.get("by", "Staff")))
+            elif self.path == "/api/bench/run":
+                if not PAIRING.is_local(self.client_address[0]):
+                    return self._json({"error": "benchmarks can only be started on the laptop"}, 403)
+                out = _bench_run(body)
             elif self.path == "/api/backup":
                 out = ENGINE.request_backup(int(body["alert"]), str(body.get("by", "Staff")))
             elif self.path == "/api/settings":
@@ -203,6 +208,57 @@ def _health(local: bool) -> dict[str, object]:
         out["phones"] = {"pin": PAIRING.pin, "paired": PAIRING.devices,
                          "url": f"http://{ip}:{LAN['port']}/staff/" if ip else None}
     return out
+
+
+BENCH_JOB: dict[str, object] = {"running": False, "kind": None, "started": None, "log": "", "error": None}
+
+
+def _bench_pairs(kind: str) -> list[str]:
+    """NPU (QNN) and CPU (XNNPACK) builds of one model, whichever exist on this laptop."""
+    models = HERE.parent / "models"
+    if kind == "detector":
+        npu = next((p for p in ("person_ssdlite_qnn_int8.pte", "person_ssdlite_qnn.pte") if (models / p).exists()), None)
+        cpu = "person_ssdlite_xnnpack.pte"
+    else:
+        npu = "normal_pattern_qnn.pte" if (models / "normal_pattern_qnn.pte").exists() else None
+        cpu = "normal_pattern_xnnpack.pte"
+    pairs = [f"models/{npu}:NPU"] if npu else []
+    if (models / cpu).exists():
+        pairs.append(f"models/{cpu}:CPU")
+    return pairs
+
+
+def _bench_run(body: dict[str, object]) -> dict[str, object]:
+    """Start a short benchmark in the background (laptop only). Results land in /api/bench."""
+    import subprocess
+
+    kind = "detector" if body.get("kind") == "detector" else "pattern"
+    seconds = int(min(max(float(body.get("seconds", 10)), 3), 60))  # type: ignore[arg-type]
+    if BENCH_JOB["running"]:
+        return {"error": "a benchmark is already running"}
+    pairs = _bench_pairs(kind)
+    if not pairs:
+        return {"error": f"no {kind} model files found in models/"}
+    cmd = [sys.executable, str(HERE / "bench" / "benchmark.py"), "--kind", kind, "--seconds", str(seconds), "--rate", "max"]
+    for p in pairs:
+        cmd += ["--pte", p]
+    BENCH_JOB.update(running=True, kind=kind, started=time.strftime("%H:%M:%S"), log="", error=None, cmd=" ".join(cmd[1:]))
+    ENGINE.log("bench", f"Benchmark started: {kind}, {seconds} s per backend ({', '.join(p.split(':')[1] for p in pairs)})")
+
+    def work() -> None:
+        try:
+            done = subprocess.run(cmd, cwd=HERE.parent, capture_output=True, text=True, timeout=seconds * 4 + 240)
+            BENCH_JOB["log"] = (done.stdout or "")[-4000:]
+            if done.returncode:
+                BENCH_JOB["error"] = (done.stderr or "benchmark failed")[-1500:]
+        except Exception as exc:  # noqa: BLE001
+            BENCH_JOB["error"] = repr(exc)
+        finally:
+            BENCH_JOB["running"] = False
+            ENGINE.log("bench", f"Benchmark finished: {kind}" + (" (error)" if BENCH_JOB["error"] else ""))
+
+    threading.Thread(target=work, daemon=True, name="bench").start()
+    return {"ok": True, "pairs": pairs}
 
 
 def _tracker(cam: str) -> Tracker:
