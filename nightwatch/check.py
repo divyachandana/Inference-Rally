@@ -26,7 +26,7 @@ MODELS = ROOT / "models"
 WEB = ROOT / "nightwatch" / "web"
 LOGS = ROOT / "logs"
 PAGES = ("home", "dashboard", "staff", "sim", "camera")          # the demo needs these
-EXTRA_PAGES = ("perf", "report", "settings", "story")           # nice to have
+EXTRA_PAGES = ("perf", "report", "settings", "story", "wall", "family", "help")           # nice to have
 ASSETS = ("auth.js", "nw.js", "theme.css")
 OK, WARN, FAIL = "  OK  ", " WARN ", " FAIL "
 
