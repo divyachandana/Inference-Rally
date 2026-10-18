@@ -78,20 +78,20 @@
 </head>
 <body class="nw">
 <header class="nw-topbar no-print">
-  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">Shift report</div><div class="nw-brand-sub">Morning handover, built on this laptop</div></div></div>
-  <nav class="nav" aria-label="Report actions">
+  <a class="nw-brand" href="/home/" title="NightWatch home"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">Shift report</div><div class="nw-brand-sub">NightWatch · morning handover, built on this laptop</div></div></a>
+  <div class="nav" role="group" aria-label="Report actions">
     <button class="nw-btn nw-btn--primary" id="print">Print</button>
     <button class="nw-btn" id="refresh">Refresh</button>
-    <a class="nw-btn nw-btn--ghost" href="/dashboard/">Nurse station</a>
-    <a class="nw-btn nw-btn--ghost" href="/sim/">Presenter</a>
-  </nav>
+  </div>
+  <div id="navwrap" style="flex-basis:100%"></div>
 </header>
-<main id="doc" aria-live="polite"><p style="color:var(--nw-muted)">Loading the shift report…</p></main>
+<main id="doc"><p style="color:var(--nw-muted)">Loading the shift report…</p></main>
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, LEVELS, SEVERITY, badge, timeline, recordForm, bindRecordForms, filedBadge, isDirty } = NW;
+const { nav, esc, icon, LEVELS, SEVERITY, badge, timeline, recordForm, bindRecordForms, filedBadge, isDirty } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('report');
+$('navwrap').innerHTML = nav('/report/');
 $('print').insertAdjacentHTML('afterbegin', icon('print'));
 $('refresh').insertAdjacentHTML('afterbegin', icon('reset'));
 
@@ -117,7 +117,7 @@ function render(r, camEvents) {
     </div>
 
     <section class="tiles" aria-label="Headline numbers">
-      ${tile('Alerts', 'bell', esc(t.alerts), t.open ? `${esc(t.open)} still open` : 'all closed', t.open ? 'warn' : '')}
+      ${tile('Alerts', 'bell', esc(t.alerts), !t.alerts ? 'none tonight' : t.open ? `${esc(t.open)} still open` : 'all closed', t.open ? 'warn' : '')}
       ${tile('Reached emergency', 'siren', esc(t.reached_emergency), 'level 3', t.reached_emergency ? 'warn' : 'good')}
       ${tile('Went outside', 'door', esc(t.went_outside), 'left the building', t.went_outside ? 'warn' : 'good')}
       ${tile('Settled on their own', 'bed', esc(t.settled_on_their_own), 'no staff needed', 'good')}

@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NightWatch · Presenter controls</title>
+<title>NightWatch · Presenter</title>
 <script src="/assets/auth.js"></script>
 <link rel="stylesheet" href="/assets/theme.css">
 <style>
   .nw-topbar { justify-content: space-between; }
   .live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .live .t { font: 750 26px/1 var(--nw-font-display); font-variant-numeric: tabular-nums; }
+  .navwrap { flex-basis: 100%; }
   .nav { display: flex; gap: 8px; flex-wrap: wrap; }
   .nav .nw-btn { min-height: 36px; font-size: 13.5px; }
   main { max-width: 1180px; margin: 0 auto; padding: 18px 24px 32px; display: grid; gap: 16px; }
@@ -105,15 +106,9 @@
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">Presenter controls</div><div class="nw-brand-sub">Stands in for door contacts, bed sensors and wearables</div></div></div>
+  <a class="nw-brand" href="/home/" title="NightWatch home"><div class="nw-brand-mark" id="logo"></div><div><h1 class="nw-brand-name">Presenter controls</h1><div class="nw-brand-sub">NightWatch · stands in for door contacts, bed sensors and wearables</div></div></a>
   <div class="live"><span class="nw-mode" id="mode">–</span><span class="t" id="clock">--:--:--</span><span id="status" class="nw-chip"></span></div>
-  <nav class="nav" aria-label="Other screens">
-    <a class="nw-btn nw-btn--ghost" href="/dashboard/" target="_blank" rel="noopener">Nurse station</a>
-    <a class="nw-btn nw-btn--ghost" href="/staff/" target="_blank" rel="noopener">Staff phone</a>
-    <a class="nw-btn nw-btn--ghost" href="/camera/" target="_blank" rel="noopener">Camera</a>
-    <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener">Performance</a>
-    <a class="nw-btn nw-btn--ghost" href="/report/" target="_blank" rel="noopener">Shift report</a>
-  </nav>
+  <div class="navwrap" id="navwrap"></div>
 </header>
 <main>
   <p class="note">Real sensors post to the same API. Keyboard:
@@ -170,10 +165,12 @@
 </main>
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, post, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick } = NW;
+const { esc, icon, post, act, toast, nav, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick } = NW;
 const $ = (id) => document.getElementById(id);
-const send = (body) => post('/api/sensor', body);
-const call = (url, body) => post(url, body);
+// Every action reports failure instead of looking like it worked (UX audit H3).
+const send = (body) => act('/api/sensor', body, "That sensor event didn't reach NightWatch.");
+const call = (url, body) => act(url, body, "That didn't reach NightWatch. Is the server running?");
+$('navwrap').innerHTML = nav('/sim/', { newTab: true }).replace('</nav>', `<a href="/staff/" target="_blank" rel="noopener">${icon('phone')}Staff phone</a></nav>`);
 $('logo').innerHTML = icon('logo');
 $('reset-ask').insertAdjacentHTML('afterbegin', icon('reset'));
 document.querySelectorAll('[data-ico]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.ico)));
@@ -325,7 +322,7 @@ document.addEventListener('click', (e) => {
   }
 });
 function allCameras(on) {
-  return Promise.all((state ? state.cameras : []).map((c) => post('/api/camera/config', { camera: c.id, enabled: on, by: 'presenter' }))).then(tick);
+  return Promise.all((state ? state.cameras : []).map((c) => act('/api/camera/config', { camera: c.id, enabled: on, by: 'presenter' }))).then(tick);
 }
 document.addEventListener('click', (e) => {
   if (handleCameraClick(e, 'presenter', tick)) return;
@@ -365,7 +362,7 @@ const BEATS = [
     say: 'The hallway camera only sees positions, never stores video. When R-07 crosses their doorway at night, that alone is a heads-up. This run uses simulated camera data.',
     act: 'Point at the camera radar on the nurse station: the track crosses the line, the card is tagged SIMULATED.' },
   { title: 'Privacy: camera off', when: 'any time', run: 'Turn hallway camera off',
-    fn: () => post('/api/camera/config', { camera: 'hall12', enabled: false, by: 'presenter' }).then(tick),
+    fn: () => act('/api/camera/config', { camera: 'hall12', enabled: false, by: 'presenter' }).then(tick),
     say: 'Privacy is a switch, not a promise: staff can turn the hallway camera off, or night only. Off means frames are dropped on arrival: nothing is analysed, nothing is stored.',
     act: 'Show the radar card change to "Camera off" and the log line with who did it. Turn it back on (All cameras on) before the next beat.' },
   { title: 'Answered on the phone', when: '02:08 · night', scn: 'night_elopement', run: 'Run it again',
