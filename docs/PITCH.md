@@ -9,23 +9,29 @@ The presenter page (`/sim/`) has a step-by-step guide with the same beats; keep 
 
 ---
 
-## 0:00–0:35 · The problem (slides: Cover, Problem, Cases)
+## 0:00–0:40 · The problem (slides: Cover, Cases, Problem)
 
-> In Wisconsin, a memory-care resident walked out through a door at 12:41 in the morning. According to
-> authorities, the door alarm went off and workers ignored it. The resident was found dead outside. A jury
-> ordered the operator to pay about four million dollars.
+*If you run long, cut the Wisconsin sentence first.*
+
+> Mildred Hernandez was a hundred years old and had Alzheimer's. One night in 2019, according to the lawsuit,
+> she walked out of her assisted-living facility in Sacramento through a door that locked behind her. She died
+> of hypothermia. Her family says staff knew she wandered at night. This year a jury awarded them a hundred and
+> ten million dollars.
 >
-> That case isn't unusual. Wandering affects roughly 20 to 30 percent of nursing-home residents with
-> dementia, and the worst outcomes happen at night. One of our teammates works in memory care. In their
-> experience, one night worker can be covering around forty residents, and residents get out even through
-> pinned doors. By the time a door alarm goes off, it's already late. What the care team wants to know is
-> earlier: **a resident has left their room at night.**
+> It isn't rare. Wandering affects roughly 20 to 30 percent of nursing-home residents with dementia, and the
+> worst cases happen at night, when one night worker can be covering around forty residents. That's our
+> teammate's experience in memory care. In another case, in Wisconsin, according to authorities, a door alarm
+> went off at 12:41 a.m. and workers ignored it. A lawsuit comes years later. What she needed was someone at that
+> door within a minute, and the moment to catch is earlier still: **a resident leaving their room at night.**
 
-*Notes:* say "according to authorities" and "a jury ordered". The 1-to-40 ratio and pinned doors are our
-teammate's experience; say so. If you mention Sacramento, say "a verdict reported at over $100 million"
-(sources say $100M or $110M).
+*Notes:* say "according to the lawsuit", "her family says" and "a jury awarded $110 million" (March 2026,
+Sacramento County: $10.2M compensatory + $100M punitive, against the corporate owner Colony Capital and the
+investment firm Formation Capital). These are allegations and a jury verdict; the defendants may appeal. Say
+$110 million, not $100 million. The 1-to-40 ratio is our teammate's experience; say so. Wisconsin: "according to
+authorities"; a jury ordered about $4M (only if asked). Sources: dudensinglaw.com/results/hernandez-verdict,
+Expert Institute, Yahoo News (links in `docs/SUBMISSION.md`).
 
-## 0:35–1:10 · What NightWatch does (slide: Ladder)
+## 0:40–1:10 · What NightWatch does (slide: Ladder)
 
 > NightWatch is night supervision that runs on one laptop at the nurse station. A hallway camera watches one
 > line: the doorway. When a resident's feet cross it going out at night, the night nurse's phone gets a quiet
@@ -82,8 +88,8 @@ nurse station turns the live switch on; only show a received message if it reall
 ## 2:45–3:00 · Close (slides: Workflow, What's next)
 
 > In the morning there's one handover report, and families get a calm answer to "how was their night?"
-> NightWatch supports the night shift; it doesn't replace them. In Wisconsin there was an alarm. NightWatch
-> notices earlier, and keeps going when nobody answers. Thank you.
+> NightWatch supports the night shift; it doesn't replace them. Mildred needed someone at that door within a
+> minute. NightWatch notices earlier, and keeps going when nobody answers. Thank you.
 
 ---
 

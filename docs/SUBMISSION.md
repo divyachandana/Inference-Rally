@@ -21,9 +21,14 @@ Compute (Copilot+ PC, Snapdragon X Elite)
 
 People with dementia sometimes try to leave their care home ("elopement"), and the worst outcomes happen at
 night, when one staff member may be covering a whole wing. Door alarms exist, but an alarm nobody answers
-doesn't help, and by the time the door alarm goes off it is already late. In one Wisconsin case, according to
-authorities, a memory-care resident left through a door at 12:41 a.m. whose alarm workers ignored, and was
-found dead outside; a jury ordered the operator to pay about $4M.
+doesn't help, and by the time the door alarm goes off it is already late.
+
+Mildred Hernandez was 100 and had Alzheimer's. According to the lawsuit, in February 2019 she left Greenhaven
+Estates, an assisted-living facility in Sacramento, through a door that locked behind her, and died of
+hypothermia; her family says staff knew she wandered at night. In March 2026 a Sacramento County jury awarded
+her family $110 million against the facility's corporate owner and an investment firm. In another case, in
+Wisconsin, according to authorities, a door alarm went off at 12:41 a.m. and workers ignored it; the resident
+was found dead outside.
 
 The moment the care team actually cares about is earlier: **a resident leaving their room at night.**
 NightWatch runs entirely on a Snapdragon X Elite laptop at the facility. A hallway camera, door and window
@@ -202,8 +207,16 @@ gets a heads-up. Then run
 
 Lawsuit claims are allegations; amounts are jury verdicts as reported. Full links are in the README → Sources.
 
-- Wisconsin, about $4M jury verdict: McKnight's Senior Living.
-- Sacramento: jury verdict reported at $100M+ (reported as $110M by some sources and $100M by others).
+- Sacramento (Hernandez v. Greenhaven Estates owners): according to the lawsuit, Mildred Hernandez, 100, with
+  Alzheimer's, left the facility in February 2019 through a door that locked behind her and died of
+  hypothermia; her family says staff knew she wandered at night. In March 2026 a Sacramento County jury awarded
+  $110 million ($10.2M compensatory + $100M punitive) against the corporate owner (Colony Capital) and an
+  investment firm (Formation Capital). These are allegations and a jury verdict; the defendants may appeal.
+  Sources: https://dudensinglaw.com/results/hernandez-verdict/ ·
+  https://www.expertinstitute.com/resources/insights/110m-verdict-assisted-living-elopement/ ·
+  https://www.yahoo.com/news/articles/family-awarded-110m-following-death-190724321.html
+- Wisconsin, about $4M jury verdict; door alarm ignored at 12:41 a.m., according to authorities: McKnight's
+  Senior Living.
 - Wandering affects roughly 20–30% of nursing-home residents with dementia, depending on study and setting.
 
 ## Placeholders to fill

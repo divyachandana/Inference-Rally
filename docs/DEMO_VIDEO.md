@@ -34,7 +34,7 @@ the same beats as a step-by-step guide.
 
 | # | Time | On screen | Voiceover | Caption |
 |---|---|---|---|---|
-| 1 | 0:00–0:30 | Title card, then the nurse station, calm. Presenter → *Normal night* (R-15 ensuite trip). R-15 out of bed, back in bed. Phone quiet. | "People with dementia sometimes leave their room at night, when one worker may be covering a whole wing. NightWatch runs on this laptop and notices. Three a.m.: a bathroom trip inside the room. Nothing fires; the care team only cares when someone leaves the room." | *Snapdragon X Elite · ExecuTorch · residents are synthetic* |
+| 1 | 0:00–0:30 | Title card, then the nurse station, calm. Presenter → *Normal night* (R-15 ensuite trip). R-15 out of bed, back in bed. Phone quiet. | "In 2019, according to the lawsuit, Mildred Hernandez, a hundred years old with Alzheimer's, walked out of her Sacramento facility at night and died of hypothermia. This year a jury awarded her family a hundred and ten million dollars. NightWatch runs on this laptop and notices the moment a resident leaves their room at night. Three a.m.: a bathroom trip inside the room. Nothing fires." | *Snapdragon X Elite · ExecuTorch · residents are synthetic* |
 | 2 | 0:30–1:20 | Presenter → **Reset**, clock **02:08**. Camera page with the doorway line, blurred, "Frames stored: 0". A teammate walks out across the line. Radar: a track crosses from ROOM to HALLWAY. Phone buzzes: "R-07 left their room". | "Two-oh-eight. This webcam stands in for the hallway camera outside room 12. Someone steps out across the doorway: R-07 has left their room. A quiet heads-up on the night phone, with what has calmed them before. A person detector runs through ExecuTorch on this laptop; frames are analysed in memory and dropped, and the nurse station sees a dot, never video." | *Live: person detected on the device* (or *SIMULATED camera data*) |
 | 3 | 1:20–2:10 | Presenter → *Elopement, unanswered*. Don't touch the phone. Heads-up → front door opens, urgent → countdown → **full-screen emergency takeover**, all phones. | "Now nobody answers, because the one worker is with someone else. R-07 reaches the front door: urgent. Still nothing, so it climbs: emergency, on every staff phone." | *No answer → it keeps escalating* |
 | 4 | 2:10–2:40 | Dashboard: emergency contacts list, who has been notified. Cut to the second phone receiving the message (it starts "This is a NightWatch demo."). Emergency services row reads **simulated**. | "At the same moment, the on-call supervisor, the family and the owner are notified. Only a short alert text leaves the building, never video or health readings. Emergency services stay in the facility's chain: NightWatch never calls 911, and in this demo that step is simulated." | *Contacts notified · emergency services simulated* |
@@ -49,6 +49,9 @@ iMessage/ntfy need the internet (the contact shows as simulated, with the reason
 dashboard; don't imply a phone received it unless it did.
 
 ## What must be true in the video
+
+- The Sacramento case is said as "according to the lawsuit" and "a jury awarded $110 million" (allegations;
+  the defendants may appeal). Full wording and sources: `docs/SCRIPT_5MIN.md` (0:00) and `docs/SUBMISSION.md`.
 
 - Residents are synthetic (`nightwatch/demo/facility.json`). Nothing from `data/` appears on screen.
 - The person on camera is a teammate who agreed; privacy view stays on. Contact phones belong to team members
