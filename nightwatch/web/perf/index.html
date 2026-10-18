@@ -102,7 +102,8 @@ function runCard(run) {
     return `<tr><td class="dev"><b class="dev-${esc(r.label)}">${esc(r.label)}</b></td><td>${esc((r.pte || '').split(/[\\/]/).pop())}</td>
       <td>${n(r.p50_ms, isDet ? 1 : 3)}</td><td>${n(r.p95_ms, isDet ? 1 : 3)}</td><td>${n(r.p99_ms, isDet ? 1 : 3)}</td>
       <td>${r.per_s == null ? '–' : Math.round(r.per_s).toLocaleString()}</td><td>${noisy ? 'n/a*' : n(r.watts_above_idle, 2)}</td><td>${noisy ? 'n/a*' : n(mj, isDet ? 1 : 3)}</td>
-      <td>${n(r.pte_mb, 1)}</td><td>${diff == null ? '–' : Number(diff).toExponential(1)}</td></tr>`;
+      <td>${r.pte_mb == null ? '–' : r.pte_mb < 0.1 ? '&lt;0.1' : n(r.pte_mb, 1)}</td>
+      <td>${diff == null || run.results.length < 2 || r === run.results[0] ? '–' : Number(diff).toExponential(1)}</td></tr>`;
   }).join('');
   const npu = run.results.find((r) => r.label === 'NPU'), cpu = run.results.find((r) => r.label === 'CPU');
   const hero = npu && cpu && npu.p50_ms && cpu.p50_ms
@@ -118,7 +119,7 @@ function runCard(run) {
     <div class="meta"><span class="nw-chip">${hostName(run.host || {})}</span><span class="nw-chip">ExecuTorch <b>${esc(run.host?.executorch || '?')}</b></span>
       <span class="nw-chip">${run.rate ? `${esc(run.rate)} per second (realistic load)` : 'as fast as possible'}</span></div>
     ${hero}
-    <div class="tablewrap"><table>
+    <div class="tablewrap" tabindex="0" role="region" aria-label="${isDet ? 'Person detector' : 'Normal-pattern model'} benchmark results"><table>
       <thead><tr><th>Device</th><th>Model file</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>Per second</th><th>Watts above idle</th><th>mJ per ${unit}</th><th>Size MB</th><th>Output diff</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
     ${power}
