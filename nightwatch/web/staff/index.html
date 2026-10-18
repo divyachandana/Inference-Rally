@@ -30,7 +30,7 @@
   .card { border-radius: 20px; overflow: hidden; margin-bottom: 14px; border: 2px solid var(--lvl);
           background: linear-gradient(180deg, var(--lvl-bg), var(--nw-bg-2) 45%); }
   .band { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: var(--lvl); color: #120a02; }
-  .nw-l3 .band { color: #fff; }
+  .nw-l3 .band { color: #120a02; }   /* dark ink on red: 6.2:1 */
   .band .lv { display: flex; align-items: center; gap: 9px; font-weight: 850; font-size: 19px; letter-spacing: .08em; }
   .band .lv .nw-ico { width: 24px; height: 24px; }
   .band .cd { font-weight: 750; font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; line-height: 1.2; }
@@ -51,6 +51,23 @@
   details { margin-top: 14px; } summary { cursor: pointer; color: var(--nw-muted); font-size: 14px; padding: 6px 0; }
   .off-host .nw-offline.is-on { display: flex; justify-content: center; margin-bottom: 12px; font-size: 15px; padding: 11px 14px; }
   .net { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--nw-faint); }
+  /* audit fixes */
+  .quiet.is-down { border-color: var(--nw-l3); background: linear-gradient(180deg, #3a0d16, var(--nw-bg-2)); }
+  .quiet.is-down .nw-ico { color: var(--nw-l3); }
+  .quiet.is-down b { color: #ffd6da; }
+  .head .t.is-stale { color: var(--nw-l3); text-decoration: line-through; }
+  .start { background: var(--nw-surface-2); border-color: var(--nw-line-strong); color: var(--nw-ink); min-height: 56px; }
+  .soundoff { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 0 0 12px; min-height: 48px; border-radius: 12px;
+              border: 2px dashed var(--nw-l1); background: var(--nw-l1-bg); color: #ffe3a3; font: 750 15px/1.2 var(--nw-font); cursor: pointer; }
+  #summ { position: sticky; top: 0; z-index: 20; }
+  .summ { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; margin: 0 -4px 12px;
+          border-radius: 14px; background: rgba(7, 11, 20, .94); border: 1px solid var(--nw-line-strong); backdrop-filter: blur(6px); }
+  .summ b { font-size: 14px; margin-right: 4px; }
+  .summ a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 750;
+            color: var(--lvl); background: var(--lvl-bg); border: 1px solid color-mix(in srgb, var(--lvl) 45%, transparent); }
+  .card.is-collapsed .facts, .card.is-collapsed .nw-tip, .card.is-collapsed [data-backup] { display: none; }
+  .card.is-collapsed .title { font-size: 19px; margin-bottom: 6px; }
+  .nw-btn--safe.armed { background: #0b5136; color: #d6ffe9; border-color: var(--nw-ok); }
   /* name, language, backup, record sheet */
   .me { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 0 12px; font-size: 14px; color: var(--nw-muted); }
   .me b { color: var(--nw-ink); }
@@ -90,9 +107,9 @@
     <div class="when"><div class="t" id="clock">--:--</div><div class="m" id="mode"></div></div>
   </div>
   <div class="me"><span id="me"></span><span class="lang" role="group" aria-label="Language / Idioma"><button data-lang="en" aria-pressed="true">EN</button><button data-lang="es" aria-pressed="false">ES</button></span></div>
-  <div id="offline-host" class="off-host"></div>
-  <button class="nw-btn nw-btn--primary nw-btn--lg start" id="start"><span data-t="start">Start shift</span><small data-t="startSub">Turns on sound and vibration for alerts</small></button>
-  <div id="list" aria-live="assertive"><div class="quiet"><b data-t="connecting">Connecting…</b></div></div>
+  <button class="nw-btn nw-btn--lg start" id="start"><span data-t="start">Start shift</span><small data-t="startSub">Turns on sound and vibration for alerts</small></button>
+  <div id="summ"></div>
+  <div id="list"><div class="quiet"><b data-t="connecting">Connecting…</b></div></div>
   <div id="todo"></div>
   <div class="net" id="net"></div>
 </div>
@@ -103,16 +120,17 @@
   <input class="nw-input" name="name" maxlength="40" required autocomplete="name" aria-labelledby="name-title">
   <div class="nw-err" role="alert" style="margin-top:8px"></div>
   <button class="nw-btn nw-btn--primary nw-btn--lg" style="width:100%;margin-top:12px" data-t="save">Save</button>
+  <button type="button" class="nw-btn" style="width:100%;margin-top:8px" id="name-skip" data-t="skip">Skip for now</button>
 </form></div>
 
 <div class="nw-modal sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="box" id="sheet-box"></div></div>
 
 <script src="/assets/nw.js"></script>
 <script>
-const { offlineBadge, esc, icon, LEVELS, timeline, contactsDone, post, audio, trapFocus } = NW;
+const { esc, icon, LEVELS, timeline, contactsDone, post, audio, trapFocus, act, toast, sortAlerts, tracker, announce } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
-offlineBadge($('offline-host'));
+// No 'Offline · still protecting' badge here: on a phone, offline means it is NOT protected (see the red card).
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
 /* ------------------------------------------------------------------ language (UI chrome only; server text stays as is) */
@@ -126,7 +144,11 @@ const STR = {
         yourName: 'Your name', nameWhy: 'Shown when you acknowledge, find someone safe, call for backup or file a record.', save: 'Save', nameNeed: 'Please enter your name.',
         you: 'You:', change: 'change', recTitle: 'File the care record', recSub: 'Two taps: how they were, and what you did.', affect: 'How were they?', interv: 'What did you do?',
         alt: 'Non-drug alternative', optional: 'optional', note: 'Note', later: 'Later', file: 'File record', filed: 'Record filed. Thank you.',
-        pickBoth: 'Choose one of each.', todo: 'Records to file', fileNow: 'File now', network: 'Could not reach the laptop. Try again.' },
+        pickBoth: 'Choose one of each.', todo: 'Records to file', fileNow: 'File now', network: 'Could not reach the laptop. Try again.',
+        skip: 'Skip for now', down: 'Not connected: you will NOT get alerts', downSub: 'This phone lost contact with the nurse-station laptop. Reconnect to the facility Wi-Fi now, or tell the nurse station.',
+        soundOff: 'Sound and vibration are OFF · tap to turn on', safeArm: 'Tap again: found safe', alerts: (n) => `${n} alerts`,
+        failAck: "\"I'm going\" didn't reach the laptop. Tap again.", failSafe: "\"Found safe\" didn't reach the laptop. Tap again.", failBackup: "Backup request didn't reach the laptop. Tap again.",
+        roomN: (r) => `Room ${r}`, newAlert: 'New alert' },
   es: { phone: 'Teléfono del turno de noche', start: 'Empezar turno', startSub: 'Activa sonido y vibración para las alertas', onShift: 'En turno · sonido y vibración activados',
         connecting: 'Conectando…', unreachable: 'No se puede conectar', wifi: 'Compruebe que está en el Wi-Fi del centro.', quiet: 'Todo tranquilo',
         quietSub: (a, b) => `${a} de ${b} residentes en la cama. Le avisaremos si alguien le necesita.`, night: 'NOCHE', day: 'DÍA',
@@ -136,7 +158,11 @@ const STR = {
         yourName: 'Su nombre', nameWhy: 'Se muestra cuando confirma, encuentra a alguien a salvo, pide ayuda o registra un informe.', save: 'Guardar', nameNeed: 'Escriba su nombre, por favor.',
         you: 'Usted:', change: 'cambiar', recTitle: 'Registrar el informe', recSub: 'Dos toques: cómo estaba y qué hizo usted.', affect: '¿Cómo estaba?', interv: '¿Qué hizo usted?',
         alt: 'Alternativa no farmacológica', optional: 'opcional', note: 'Nota', later: 'Más tarde', file: 'Registrar', filed: 'Informe registrado. Gracias.',
-        pickBoth: 'Elija una opción de cada grupo.', todo: 'Informes por registrar', fileNow: 'Registrar ahora', network: 'No se puede conectar con el portátil. Inténtelo de nuevo.' },
+        pickBoth: 'Elija una opción de cada grupo.', todo: 'Informes por registrar', fileNow: 'Registrar ahora', network: 'No se puede conectar con el portátil. Inténtelo de nuevo.',
+        skip: 'Ahora no', down: 'Sin conexión: NO recibirá alertas', downSub: 'Este teléfono perdió el contacto con el portátil del control de enfermería. Vuelva a conectarse al Wi-Fi del centro o avise al control.',
+        soundOff: 'Sonido y vibración APAGADOS · toque para activar', safeArm: 'Toque otra vez: a salvo', alerts: (n) => `${n} alertas`,
+        failAck: '"Voy" no llegó al portátil. Toque otra vez.', failSafe: '"Encontrado a salvo" no llegó al portátil. Toque otra vez.', failBackup: 'La petición de ayuda no llegó al portátil. Toque otra vez.',
+        roomN: (r) => `Habitación ${r}`, newAlert: 'Nueva alerta' },
 };
 let lang = store.get('nw-lang') === 'es' ? 'es' : 'en';
 const T = (k, ...a) => { const v = STR[lang][k] ?? STR.en[k]; return typeof v === 'function' ? v(...a) : v; };
@@ -156,6 +182,8 @@ function askName() {
   modalReturn = document.activeElement;
   $('namebox').hidden = false; const f = $('nameform'); f.name.value = myName; setTimeout(() => f.name.focus(), 30);
 }
+$('name-skip').onclick = () => { nameSkipped = true; $('namebox').hidden = true; if (modalReturn && document.contains(modalReturn)) modalReturn.focus(); };
+let nameSkipped = false;
 $('nameform').onsubmit = (e) => {
   e.preventDefault();
   const v = e.target.name.value.trim().slice(0, 40);
@@ -165,11 +193,17 @@ $('nameform').onsubmit = (e) => {
 };
 
 /* ------------------------------------------------------------------ sound + vibration */
-let shift = false, seen = {};
-$('start').onclick = () => {
-  shift = true; audio();
-  $('start').outerHTML = `<div class="onshift"><span class="nw-dot is-live"></span><span data-t="onShift">${esc(T('onShift'))}</span></div>`;
-};
+let shift = false;
+try { shift = sessionStorage.getItem('nw-shift') === '1'; } catch {}
+const track = tracker();
+function startShift() {
+  shift = true; audio(); try { sessionStorage.setItem('nw-shift', '1'); } catch {}
+  if ($('start')) $('start').outerHTML = `<div class="onshift"><span class="nw-dot is-live"></span><span data-t="onShift">${esc(T('onShift'))}</span></div>`;
+  document.querySelectorAll('.soundoff').forEach((b) => b.remove());
+}
+$('start').onclick = startShift;
+if (shift) startShift();   // remembered for this tab; audio re-arms on the first tap anywhere
+document.addEventListener('pointerdown', () => { if (shift) audio(); });
 function beep(level) {
   if (navigator.vibrate) navigator.vibrate(level >= 3 ? [400, 150, 400, 150, 400] : level === 2 ? [300, 100, 300] : [150]);
   if (!shift) return;
@@ -192,20 +226,22 @@ function countdown(a) {
 }
 function card(a) {
   const L = LEVELS[a.level];
-  return `<article class="card nw-l${a.level}${a.level === 3 && !a.acked_by ? ' nw-attn' : ''}" data-id="${a.id}" aria-label="${esc(T('L' + a.level))}">
+  const collapsed = a.acked_by && lastState && lastState.alerts.length > 1;
+  return `<article class="card nw-l${a.level}${a.level === 3 && !a.acked_by ? ' nw-attn' : ''}${collapsed ? ' is-collapsed' : ''}" id="alert-${a.id}" data-id="${a.id}" tabindex="-1" aria-label="${esc(T('L' + a.level))}: ${esc(a.title)}">
     <div class="band"><div class="lv">${icon(L.icon)}${esc(T('L' + a.level))}</div>${countdown(a)}</div>
     <div class="body">
+      ${shift ? '' : `<button class="soundoff" type="button" data-soundon>${icon('mute')}${esc(T('soundOff'))}</button>`}
       <h2 class="title">${esc(a.title)}</h2>
       <div class="facts">
         ${a.description ? `<div class="fact">${icon('eye')}<div><div class="k">${esc(T('lookFor'))}</div><div class="v">${esc(a.description)}</div></div></div>` : ''}
-        ${a.room ? `<div class="fact">${icon('pin')}<div><div class="k">${esc(T('room'))}</div><div class="v">${esc(a.room)}${a.resident ? ` · ${esc(a.resident)}` : ''}</div></div></div>` : ''}
+        ${a.room ? `<div class="fact">${icon('pin')}<div><div class="k">${esc(T('room'))}</div><div class="v">${esc(T('roomN', a.room))}${a.resident ? ` · ${esc(a.resident)}` : ''}</div></div></div>` : ''}
       </div>
       ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">${esc(T('helps'))}</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div>${a.suggestions[1] ? `<div class="nw-tip-more">${esc(a.suggestions[1])}</div>` : ''}</div></div>` : ''}
       ${a.acked_by ? `<div class="responding">${icon('walk')}${esc(T('responding', a.acked_by))}</div>` : ''}
       ${a.backup_by ? `<div class="backup-line" role="status">${icon('phone')}${esc(T('backupBy', a.backup_by))}</div>` : ''}
       <div class="btns">
         ${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary nw-btn--lg" data-ack="${a.id}">${icon('walk')}${esc(T('going'))}</button>`}
-        <button class="nw-btn nw-btn--safe nw-btn--lg" data-res="${a.id}">${icon('check')}${esc(T('safe'))}</button>
+        <button class="nw-btn nw-btn--safe nw-btn--lg" data-res="${a.id}">${icon('check')}<span>${esc(T('safe'))}</span></button>
         ${a.backup_by ? '' : `<button class="nw-btn nw-btn--backup nw-btn--lg" data-backup="${a.id}" aria-describedby="bk-${a.id}">${icon('phone')}<span>${esc(T('backup'))}</span></button><span id="bk-${a.id}" class="nw-sr-only">${esc(T('backupArm'))}</span>`}
       </div>
       <details><summary>${esc(T('history', a.history.length))}</summary>${timeline(a.history)}</details>
@@ -259,11 +295,17 @@ document.addEventListener('click', async (e) => {
   const fileNow = e.target.closest('[data-filenow]');
   if (fileNow) { const a = lastState && lastState.recent.find((x) => String(x.id) === fileNow.dataset.filenow); if (a) openSheet(a); return; }
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.ack) { b.disabled = true; await post('/api/ack', { alert: +b.dataset.ack, by: by() }); tick(); }
+  if (b.dataset.soundon != null && 'soundon' in b.dataset) { startShift(); lastKey = ''; tick(); return; }
+  if (b.dataset.ack) { b.disabled = true; const r = await act('/api/ack', { alert: +b.dataset.ack, by: by() }, T('failAck')); if (!r.ok) b.disabled = false; tick(); }
   if (b.dataset.res) {
-    b.disabled = true;
     const id = +b.dataset.res, a = lastState && lastState.alerts.find((x) => x.id === id);
-    await post('/api/resolve', { alert: id, outcome: 'Found safe, returned to room' });
+    if (!armed['res' + id]) {   // M4: one pocket tap must not close an alert; tap again within 4 s
+      armed['res' + id] = setTimeout(() => { delete armed['res' + id]; b.classList.remove('armed'); b.querySelector('span').textContent = T('safe'); }, 4000);
+      b.classList.add('armed'); b.querySelector('span').textContent = T('safeArm'); return;
+    }
+    clearTimeout(armed['res' + id]); delete armed['res' + id]; b.disabled = true;
+    const r = await act('/api/resolve', { alert: id, outcome: 'Found safe, returned to room' }, T('failSafe'));
+    if (!r.ok) { b.disabled = false; b.classList.remove('armed'); b.querySelector('span').textContent = T('safe'); return; }
     await tick();
     const closed = lastState && lastState.recent.find((x) => x.id === id);
     if (closed && closed.record && closed.record.status !== 'filed') openSheet(closed); else if (a) openSheet({ ...a });
@@ -275,13 +317,16 @@ document.addEventListener('click', async (e) => {
       b.classList.add('armed'); b.querySelector('span').textContent = T('backupArm'); return;
     }
     clearTimeout(armed[id]); delete armed[id]; b.disabled = true;
-    await post('/api/backup', { alert: +id, by: by() }); tick();
+    const r = await act('/api/backup', { alert: +id, by: by() }, T('failBackup'));
+    if (!r.ok) { b.disabled = false; b.classList.remove('armed'); b.querySelector('span').textContent = T('backup'); }
+    tick();
   }
 });
 document.addEventListener('keydown', (e) => {
   const m = !$('sheet').hidden ? $('sheet') : !$('namebox').hidden ? $('namebox') : null;
   if (!m) return;
   if (e.key === 'Escape' && m === $('sheet')) { closeSheet(); return; }
+  if (e.key === 'Escape' && m === $('namebox')) { $('name-skip').click(); return; }
   trapFocus(m, e);
 });
 
@@ -292,8 +337,11 @@ function render(s) {
   $('mode').className = 'm ' + (s.night ? 'is-night' : 'is-day');
   $('mode').innerHTML = s.night ? `${icon('moon')}${esc(T('night'))}` : `${icon('sun')}${esc(T('day'))}`;
   $('net').textContent = T('net', s.facility);
-  const key = JSON.stringify(s.alerts.map((a) => [a.id, a.level, a.acked_by, a.backup_by, a.history.length, a.escalates_in_s == null, a.title, contactsDone(a)]));
+  const key = shift + JSON.stringify(s.alerts.map((a) => [a.id, a.level, a.acked_by, a.backup_by, a.history.length, a.escalates_in_s == null, a.title, contactsDone(a)]));
   for (const a of s.alerts) { const el = document.querySelector(`[data-cd="${a.id}"]`); if (el) el.textContent = `${a.escalates_in_s} s`; }
+  const cnt = { 3: 0, 2: 0, 1: 0 }; s.alerts.forEach((a) => { cnt[a.level]++; });
+  $('summ').innerHTML = s.alerts.length > 1 ? `<nav class="summ" aria-label="${esc(T('alerts', s.alerts.length))}"><b>${esc(T('alerts', s.alerts.length))}</b>${s.alerts.map((a) =>
+    `<a class="nw-l${a.level}" href="#alert-${a.id}">${icon(LEVELS[a.level].icon)}${esc(T('L' + a.level))}${a.resident ? ` · ${esc(a.resident)}` : ''}${a.acked_by ? ' ✓' : ''}</a>`).join('')}</nav>` : '';
   if (key !== lastKey && !Object.keys(armed).length) {   // never rebuild under a thumb mid-confirm
     lastKey = key;
     const open = new Set([...document.querySelectorAll('details[open]')].map((d) => d.closest('.card')?.dataset.id));
@@ -309,18 +357,47 @@ function render(s) {
       ${drafts.map((a) => `<div class="it"><span>${esc(a.title)}</span><button class="nw-btn" data-filenow="${a.id}">${esc(T('fileNow'))}</button></div>`).join('')}</section>` : '';
   }
 }
+let down = false, firstTick = true;
+function showDown() {
+  $('list').innerHTML = `<div class="quiet is-down" role="alert">${icon('wifiOff')}<b>${esc(T('down'))}</b><p>${esc(T('downSub'))}</p></div>`;
+  $('summ').innerHTML = ''; $('clock').classList.add('is-stale'); lastKey = '';
+  if (!down) {   // M5: say it once, loudly, when contact is lost
+    down = true; announce(T('down'));
+    if (navigator.vibrate) { try { navigator.vibrate([600, 200, 600]); } catch {} }
+    const ctx = shift ? audio() : null;
+    if (ctx && ctx.state === 'running') { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 220; g.gain.value = 0.2; o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.6); }
+  }
+}
 async function tick() {
   let s;
-  try { s = await (await fetch('/api/state')).json(); }
-  catch { $('list').innerHTML = `<div class="quiet">${icon('wifiOff')}<b>${esc(T('unreachable'))}</b><p>${esc(T('wifi'))}</p></div>`; lastKey = ''; return; }
-  if (!s || !s.alerts) return;   // 401 while pairing: auth.js shows the PIN prompt
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    if (r.status === 401) return;   // not paired yet: auth.js shows the PIN prompt
+    if (!r.ok) throw new Error(r.status);
+    s = await r.json();
+    if (!s || !Array.isArray(s.alerts)) throw new Error('bad state');
+  } catch { showDown(); return; }
+  if (down) { down = false; $('clock').classList.remove('is-stale'); lastKey = ''; }
+  s.alerts = sortAlerts(s.alerts);
   lastState = s; TAX = s.taxonomy || TAX;
-  for (const a of s.alerts) {
-    if ((seen[a.id] || 0) < a.level && !a.acked_by) beep(a.level);
-    seen[a.id] = Math.max(seen[a.id] || 0, a.level);
+  const changes = track(s.alerts);
+  let interrupt = null;
+  for (const { a, kind } of changes) {
+    if (kind === 'new' || kind === 'rose') {
+      if (!a.acked_by) beep(a.level);
+      announce(`${T('L' + a.level)}: ${a.title}`);
+      if (!interrupt) interrupt = a;
+    }
   }
+  if (interrupt && !$('sheet').hidden) closeSheet();   // H5: a new alert beats paperwork (the draft stays in "Records to file")
   render(s);
-  if (!myName && $('namebox').hidden && !document.querySelector('[aria-labelledby="nw-pair-title"]')) askName();
+  if (!firstTick && interrupt && changes.some((c) => c.kind === 'new' && c.a === interrupt) && document.activeElement && !document.activeElement.closest('.card')) {
+    document.getElementById(`alert-${interrupt.id}`)?.focus({ preventScroll: false });
+  }
+  firstTick = false;
+  // Ask for a name only when nothing is happening: never block an alert (until then we act as "Night staff (phone)").
+  if (!myName && !nameSkipped && !s.alerts.length && $('namebox').hidden && $('sheet').hidden && !document.querySelector('[aria-labelledby="nw-pair-title"]')) askName();
+  if (s.alerts.length && !$('namebox').hidden && !myName) $('namebox').hidden = true;
 }
 applyLang();
 setInterval(tick, 1000); tick();
