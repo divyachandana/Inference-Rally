@@ -438,7 +438,8 @@ class Engine:
                            "p95_ms": round(lat[int(len(lat) * 0.95)], 3) if lat else None},
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
-                             "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway")}
+                             "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway"),
+                             "tracks": c.get("tracks", []) if time.time() - c["last_frame"] < 3 else []}
                             for c in self.cameras.values()],
                 "camera_p50_ms": round(sorted(self.camera_latencies)[len(self.camera_latencies) // 2], 1)
                                  if self.camera_latencies else None,
@@ -455,6 +456,34 @@ class Engine:
                 "events": list(self.events),
                 "stats": {"visits_today": self.visits_today, "alerts": len(self.alerts),
                           "median_ack_s": round(sorted(acked)[len(acked) // 2]) if acked else None},
+            }
+
+    def report(self) -> dict[str, object]:
+        """Morning handover: everything that happened tonight, with response times and care records."""
+        with self.lock:
+            acked = sorted(round(a.acked_at - a.created) for a in self.alerts if a.acked_at)
+            sev: dict[str, int] = {"1": 0, "2": 0, "3": 0}
+            for a in self.alerts:
+                if a.record:
+                    sev[str(a.record["severity"])] += 1
+            by_resident: dict[str, int] = {}
+            for a in self.alerts:
+                if a.resident:
+                    by_resident[a.resident] = by_resident.get(a.resident, 0) + 1
+            return {
+                "facility": self.facility, "generated_at": self.clock().strftime("%H:%M"),
+                "night_staff": self.night_staff,
+                "totals": {"alerts": len(self.alerts), "open": sum(1 for a in self.alerts if not a.resolved),
+                           "reached_emergency": sum(1 for a in self.alerts if a.max_level >= 3),
+                           "went_outside": sum(1 for a in self.alerts if a.went_outside),
+                           "settled_on_their_own": sum(1 for a in self.alerts if a.record and a.record["intervention"] == "Monitoring"),
+                           "visits_logged": self.visits_today},
+                "response_s": {"median": acked[len(acked) // 2] if acked else None, "max": acked[-1] if acked else None,
+                               "count": len(acked)},
+                "severity": sev,
+                "by_resident": by_resident,
+                "alerts": [self._alert_view(a) for a in self.alerts],
+                "model": {"name": self.scorer.name, "device": self.scorer.device},  # type: ignore[attr-defined]
             }
 
     def _alert_view(self, a: Alert) -> dict[str, object]:

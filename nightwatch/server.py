@@ -9,6 +9,7 @@ Pages:  /dashboard/  (nurse station)   /staff/  (night staff phone)   /sim/  (se
 
 API (JSON):
     GET  /api/state
+    GET  /api/report    the night's shift report (every alert, response times, severity, draft care records)
     POST /api/sensor    {"type": "door", "exit": "front", "open": true}
                         {"type": "bed" | "hr" | "motion" | "location", "resident": "R-07", ...}
     POST /api/ack       {"alert": 3, "by": "Night nurse"}
@@ -52,6 +53,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/api/state":
             return self._json(ENGINE.view())
+        if self.path == "/api/report":
+            return self._json(ENGINE.report())
         if self.path in ("", "/"):
             self.send_response(302)
             self.send_header("Location", "/dashboard/")
@@ -123,6 +126,11 @@ def _frame(body: dict[str, object]) -> dict[str, object]:
         crossings = tracker.update(boxes)
         tracks, people, has_door = tracker.view(), tracker.people, tracker.doorway is not None
     ENGINE.camera(cam, people, ms, crossings, has_door)
+    with ENGINE.lock:
+        if cam in ENGINE.cameras:
+            # Positions only (no pixels), so the dashboard can draw a privacy-safe "radar" of the doorway.
+            ENGINE.cameras[cam]["tracks"] = [{k: t[k] for k in ("id", "x1", "y1", "x2", "y2", "side", "confirmed")}
+                                             | {"trail": t["trail"][-8:]} for t in tracks]
     return {"tracks": tracks, "crossings": crossings, "people": people, "ms": round(ms, 1),
             "model": DETECTOR.name, "device": DETECTOR.device}  # type: ignore[attr-defined]
 
