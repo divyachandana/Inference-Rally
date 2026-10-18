@@ -28,6 +28,8 @@ See [Sources](#sources) for more cases and the numbers we cite.
 - **Speaks the care team's language.** Every closed alert gets the team's derived severity badge (1 routine / 2 notable / 3 escalation, from the highest level reached) and a draft care-record entry in their event format: location as a type (never a room), night as a band, affect and intervention left for staff to confirm. Less paperwork for the one person on nights.
 - **It never dials anyone in this build.** Contact steps are shown and logged as "(simulated)".
 
+**Architecture diagram and data map:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Why it runs on the device
 
 It works when the facility's internet drops at night, resident data never leaves the building,
