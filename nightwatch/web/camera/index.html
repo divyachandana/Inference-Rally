@@ -3,9 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NightWatch Camera</title>
+<title>NightWatch · Camera</title>
 <script src="/assets/auth.js"></script>
+<script src="/assets/a11y.js"></script>
 <link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/assets/a11y.css">
+<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png">
 <style>
   /* Local names mapped onto the shared NightWatch theme (assets/theme.css). */
   :root {
@@ -17,6 +21,7 @@
   [hidden] { display: none !important; }
   html, body { overflow-x: hidden; }
   .nw-topbar { justify-content: space-between; }
+  h1.nw-brand-name { margin: 0; }
   .live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .live .t { font: 750 26px/1 var(--nw-font-display); font-variant-numeric: tabular-nums; }
   .nav { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -248,18 +253,25 @@
     .drawhint .ln { stroke-dashoffset: 0; stroke-dasharray: 2 1.5; }
     .drawhint .tgt { transform: scale(1.3); }
   }
+  .nw-rm .switch .knob, .nw-rm .switch .knob::after, .nw-rm .banner, .nw-rm .nw-btn { transition: none; }
+  .nw-rm .state .pulse, .nw-rm .drawhint .a, .nw-rm .drawhint .b, .nw-rm .drawhint .ln { animation: none; }
+  .nw-rm .drawhint .ln { stroke-dashoffset: 0; stroke-dasharray: 2 1.5; }
+  .nw-rm .drawhint .tgt { transform: scale(1.3); }
 </style>
 </head>
 <body class="nw">
 <header class="nw-topbar">
-  <div class="nw-brand"><div class="nw-brand-mark" id="logo"></div><div><div class="nw-brand-name">Hallway camera</div><div class="nw-brand-sub">On-device person detection · nothing recorded</div></div></div>
+  <div class="nw-brand"><div class="nw-brand-mark" style="background:none;border:0"><img src="/assets/brand/logo.svg" alt="" width="38" height="38" style="display:block"></div><div><h1 class="nw-brand-name">Hallway camera</h1><div class="nw-brand-sub">On-device person detection · nothing recorded</div></div></div>
   <div class="live"><span class="nw-mode" id="mode">–</span><span class="t" id="clock">--:--</span></div>
   <nav class="nav" aria-label="Other screens">
-    <button class="nw-btn" id="guide" type="button" aria-haspopup="true"><span class="ico-help"></span>Setup guide</button>
+    <a class="nw-btn nw-btn--ghost" href="/home/" target="_blank" rel="noopener">Home</a>
     <a class="nw-btn nw-btn--ghost" href="/dashboard/" target="_blank" rel="noopener">Nurse station</a>
     <a class="nw-btn nw-btn--ghost" href="/staff/" target="_blank" rel="noopener">Staff phone</a>
     <a class="nw-btn nw-btn--ghost" href="/sim/" target="_blank" rel="noopener">Presenter</a>
     <a class="nw-btn nw-btn--ghost" href="/perf/" target="_blank" rel="noopener">Performance</a>
+    <a class="nw-btn nw-btn--ghost" href="/help/" target="_blank" rel="noopener">Help</a>
+    <button class="nw-btn" id="guide" type="button" aria-controls="wiz"><span class="ico-help"></span>Setup guide</button>
+    <div data-nw-display></div>
   </nav>
 </header>
 <main id="main">
@@ -918,7 +930,7 @@ async function poll() {
     const s = await (await fetch('/api/state')).json();
     serverDown = false;
     $('clock').textContent = s.clock.slice(0, 5);
-    $('mode').innerHTML = window.NW ? NW.icon(s.night ? 'moon' : 'sun') + (s.night ? ' Night' : ' Day') : (s.night ? 'Night' : 'Day');
+    $('mode').innerHTML = window.NW ? NW.icon(s.night ? 'moon' : 'sun') + (s.night ? ' NIGHT' : ' DAY') : (s.night ? 'NIGHT' : 'DAY');
     $('mode').className = 'nw-mode ' + (s.night ? 'is-night' : 'is-day');
     window.nwNight = !!s.night;
     const me = (s.cameras || []).find((c) => c.id === $('cam').value);
@@ -1068,7 +1080,7 @@ function goStep(i) {
   wizShell(); wiz.shown = i; wizUpdate();
   $('wiz-title').focus({ preventScroll: true });
   // Phones: keep the live view and the step's heading together on screen.
-  if (window.innerWidth <= 980) $('stage').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  if (window.innerWidth <= 980) $('stage').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('nw-rm') ? 'auto' : 'smooth' });
 }
 function openWiz(i = 0) {
   if (wiz.open) { goStep(i); return; }
@@ -1125,7 +1137,7 @@ $('guide').onclick = () => (wiz.open ? closeWiz() : openWiz(0));
 $('guide2').onclick = () => openWiz(0);
 setInterval(() => { if (wiz.open) wizUpdate(); if (running) renderPeople(); }, 1000);
 
-if (window.NW) { $('logo').innerHTML = NW.icon('camera'); $('aimbadge').querySelector('.ico-eye').innerHTML = NW.icon('eye'); }
+if (window.NW) { $('aimbadge').querySelector('.ico-eye').innerHTML = NW.icon('eye'); }
 markGuide(); refreshUI(); drawTimeline();
 setInterval(poll, 1000); poll(); render();
 </script>
