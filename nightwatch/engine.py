@@ -439,7 +439,8 @@ class Engine:
                 "timeouts": {"l1": self.l1_timeout, "ack": self.ack_timeout},
                 "cameras": [{"id": c["id"], "label": c["label"], "persons": c["persons"],
                              "live": time.time() - c["last_frame"] < 3, "doorway": c.get("doorway"),
-                             "tracks": c.get("tracks", []) if time.time() - c["last_frame"] < 3 else []}
+                             "tracks": c.get("tracks", []) if time.time() - c["last_frame"] < 3 else [],
+                             "simulated": bool(c.get("simulated")) and time.time() - c["last_frame"] < 3}
                             for c in self.cameras.values()],
                 "camera_p50_ms": round(sorted(self.camera_latencies)[len(self.camera_latencies) // 2], 1)
                                  if self.camera_latencies else None,
@@ -539,7 +540,35 @@ def _hr_ramp(rid: str, start: int, end: int, steps: int, gap: float) -> list[tup
     return [(gap, _s({"type": "hr", "resident": rid, "bpm": start + (end - start) * i / (steps - 1)})) for i in range(steps)]
 
 
+SIM_DOORWAY = {"line": [0.47, 0.40, 0.50, 0.86], "inside": 1}   # room is left of this line in the demo view
+
+
+def _sim_camera_frame(i: int, n: int) -> Callable[[Engine], object]:
+    """Presenter stand-in for the hallway camera: a person walks from the room out across the doorway.
+
+    Feeds the same path as a real frame (tracks + crossing) and is flagged "simulated" in the state.
+    """
+    def act(e: Engine) -> None:
+        with e.lock:
+            cam = e.cameras["hall12"]
+            cam["doorway"], cam["simulated"] = SIM_DOORWAY, True
+            fx = 0.26 + 0.48 * i / (n - 1)                  # feet x from inside the room to the hallway
+            trail = [[round(0.26 + 0.48 * k / (n - 1), 3), 0.85] for k in range(max(0, i - 7), i + 1)]
+            cam["tracks"] = [{"id": 7, "x1": fx - 0.065, "y1": 0.40, "x2": fx + 0.065, "y2": 0.86,
+                              "side": 1 if fx < 0.485 else -1, "confirmed": i >= 2, "trail": trail}]
+            crossed = fx >= 0.485 and (0.26 + 0.48 * (i - 1) / (n - 1)) < 0.485
+            e.camera("hall12", 1, 6.0, [{"track": 7, "direction": "out"}] if crossed else [], doorway=True)
+    return act
+
+
 SCENARIOS: dict[str, list[tuple[float, Callable[[Engine], object]]]] = {
+    # 02:08. Simulated hallway camera: a person walks out of room 12 across the doorway line.
+    "camera_walkout": [
+        (0, lambda e: (e.reset(), e.set_time("02:08"))),
+        (1, _s({"type": "hr", "resident": "R-07", "bpm": 84})),
+        *[(0.4, _sim_camera_frame(i, 16)) for i in range(16)],
+        *[(0.4, _sim_camera_frame(15, 16)) for _ in range(20)],   # stays in the hallway, still in view
+    ],
     # 02:08. R-07 gets up, gets agitated, heads for the front door, and walks out if nobody responds.
     "night_elopement": [
         (0, lambda e: (e.reset(), e.set_time("02:08"))),
