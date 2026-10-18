@@ -125,3 +125,23 @@ def test_human_decider_rejects_moves_when_not_waiting() -> None:
 def test_human_decider_times_out() -> None:
     with pytest.raises(DecisionTimeoutError):
         asyncio.run(HumanDecider(timeout_s=0.05).decide([], OBS, lambda _: None))
+
+
+def test_qnn_decider_stops_live_updates_when_the_race_is_stopped() -> None:
+    host = FakeHost(['{"move"', ': "right"'] + [" ."] * 200)  # ~0.2 s+ of streaming
+    seen: list[int] = []
+
+    async def scenario() -> None:
+        task = asyncio.create_task(
+            _decider(host).decide(MESSAGES, OBS, lambda m: seen.append(m.tokens))
+        )
+        while not seen:
+            await asyncio.sleep(0.005)
+        task.cancel()  # STOP: the race task is cancelled mid-answer
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        stopped_at = len(seen)
+        await asyncio.sleep(0.4)  # the NPU thread keeps streaming the rest of its answer
+        assert len(seen) == stopped_at
+
+    asyncio.run(scenario())

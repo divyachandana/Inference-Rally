@@ -141,6 +141,7 @@ folder (next to its `qnn_executorch_backend.dll`).
 | Key | Action |
 |---|---|
 | Enter | Start / rematch (same maze) |
+| S | Stop the race (back to the title screen, same maze) |
 | N | New random maze |
 | G | Switch DEMO / PLAY / UNFAIR |
 | ← ↑ → | Drive at a junction (PLAY): left / straight / right |

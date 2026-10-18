@@ -48,14 +48,15 @@ export async function startRace(options = {}) {
 }
 
 /**
- * Show a profile's maze and racers on the attract screen.
+ * Show a profile's maze and racers on the attract screen (stops a running race).
  * @param {string} profile
+ * @param {number} [seed] Maze to show; the profile's default maze if omitted.
  */
-export async function previewRace(profile) {
+export async function previewRace(profile, seed) {
   const response = await fetch('/api/race/preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile }),
+    body: JSON.stringify(seed == null ? { profile } : { profile, seed }),
   });
   return response.json();
 }

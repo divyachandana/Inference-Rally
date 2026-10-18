@@ -1,7 +1,7 @@
 /**
  * Entry point: wires the DOM, the event stream, keyboard controls and the game.
  *
- * Keys: Enter = start / rematch · N = new maze · G = demo/play/unfair mode · M = mute
+ * Keys: Enter = start / rematch · S = stop · N = new maze · G = demo/play/unfair mode · M = mute
  *       P = retro pixels on/off · 1-3 = focus one racer · 0 / Esc = split screen
  *       Arrows = drive (play mode: ← left, ↑ straight, → right, ↓ U-turn)
  */
@@ -69,6 +69,11 @@ async function launch(seed) {
 const actions = {
   Enter: () => launch(currentSeed),
   n: () => launch(Math.floor(Math.random() * 100000)),
+  // Stop the race: back to the title screen on the same maze, ready to restart.
+  s: async () => {
+    const result = await previewRace(MODES[mode].profile, currentSeed);
+    if (result.error) dom.status.textContent = result.error;
+  },
   g: async () => {
     const next = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
     showMode(next);
@@ -103,6 +108,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 document.querySelector('#btn-start').addEventListener('click', actions.Enter);
+document.querySelector('#btn-stop').addEventListener('click', actions.s);
 document.querySelector('#btn-new').addEventListener('click', actions.n);
 document.querySelector('#btn-mode').addEventListener('click', actions.g);
 document.querySelector('#btn-sound').addEventListener('click', actions.m);

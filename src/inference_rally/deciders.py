@@ -206,17 +206,25 @@ class QnnDecider:
     ) -> tuple[DecisionResult, int | None]:
         loop = asyncio.get_running_loop()
         meter = TokenMeter()
+        # The NPU can't be interrupted mid-answer: if the race is stopped, the pipe thread
+        # keeps streaming until the host finishes. Stop forwarding those tokens to the HUD.
+        stopped = False
+
+        def forward() -> None:
+            if on_token and not stopped:
+                on_token(meter)
 
         def on_delta(_: str) -> None:
             # Runs on the pipe thread: time the token here, update the HUD on the loop.
             meter.add_tokens(1)
-            if on_token:
-                loop.call_soon_threadsafe(on_token, meter)
+            loop.call_soon_threadsafe(forward)
 
         try:
             reply = await asyncio.to_thread(self._host.generate, system, prompt, seq_len, on_delta)
         except QnnHostError as exc:
             raise DeciderError(f"{self._spec.id}: {exc}") from exc
+        finally:
+            stopped = True
         if reply.generated_tokens:
             meter.tokens = reply.generated_tokens  # exact count from the host
         text = CONTROL_TEXT.sub("", reply.text).strip()
