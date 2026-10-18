@@ -105,6 +105,7 @@ class Alert:
     backup_by: str | None = None
     went_outside: bool = False
     record: dict[str, object] | None = None
+    simulated: bool = False         # raised by the presenter's simulated camera, not a real sensor
 
 
 class Engine:
@@ -126,6 +127,7 @@ class Engine:
         self._saved_rev = -1
         self._autosave_stop = threading.Event()
         self._autosave: threading.Thread | None = None
+        self._simulating = False                  # True while a simulated camera frame is being handled
         self.reset()
 
     # ------------------------------------------------------------------ clock and setup
@@ -268,7 +270,7 @@ class Engine:
     def _outside(self, r: Resident, exit_id: str) -> None:
         ex = self.exits.get(exit_id)
         label = ex.label if ex else exit_id
-        a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c} °C", r, ex, force=True)
+        a = self._raise(3, f"{r.name} is OUTSIDE via {label}. {self.outside_temp_c:g} °C", r, ex, force=True)
         a.went_outside = True
 
     def camera_active(self, cam_id: str) -> tuple[bool, str]:
@@ -374,9 +376,12 @@ class Engine:
         return None
 
     def _raise(self, level: int, title: str, r: Resident | None, ex: Exit | None, force: bool = False) -> Alert:
+        if self._simulating:
+            title += " (simulated camera)"   # stays in the title and history after the radar tag is gone
         a = self._open_alert_for(r, ex)
         if a is None:
-            a = Alert(self._next_alert, level, title, r.id if r else None, ex.id if ex else None)
+            a = Alert(self._next_alert, level, title, r.id if r else None, ex.id if ex else None,
+                      simulated=self._simulating)
             self._next_alert += 1
             self.alerts.append(a)
             a.max_level = level
@@ -384,6 +389,7 @@ class Engine:
             self.log(f"L{level}", title)
         elif level > a.level or force:
             a.title = title
+            a.simulated = a.simulated or self._simulating
             if ex and not a.exit:
                 a.exit = ex.id
             self._set_level(a, max(level, a.level), title)
@@ -588,7 +594,12 @@ class Engine:
             return spec
 
     def apply_settings(self, new: dict[str, object], save_to: Path) -> dict[str, object]:
-        """Validate, save to a local (git-ignored) file, and restart the night with it."""
+        """Validate, save to a local (git-ignored) file, and apply it.
+
+        Kept across the change: each camera's on/off, schedule and doorway line (by id: a camera staff
+        turned off stays off), tonight's resolved alerts with their care records (draft or filed), the
+        event log, visit count, alert numbering and the clock. Only open alerts and residents' live
+        state start over; the response says how many open alerts were cleared."""
         try:
             spec = validate_settings(new)
         except ValueError as exc:
@@ -602,9 +613,25 @@ class Engine:
             if timeouts:
                 self.l1_timeout, self.ack_timeout = float(timeouts["l1"]), float(timeouts["ack"])
             self.facility_path = save_to
+            cams = {cid: {k: c.get(k) for k in ("enabled", "schedule", "doorway")} for cid, c in self.cameras.items()}
+            kept = [a for a in self.alerts if a.resolved]
+            dropped = len(self.alerts) - len(kept)
+            events, visits, next_id = list(self.events), self.visits_today, self._next_alert
+            clock = (self._base_real, self._base_virtual, self.speed)
             self.reset()
-            self.log("settings", "Settings saved and applied (alerts cleared)")
-        return {"ok": True}
+            for cid, c in cams.items():
+                if cid in self.cameras:
+                    self.cameras[cid].update(enabled=c["enabled"], schedule=c["schedule"])
+                    if c["doorway"]:
+                        self.cameras[cid]["doorway"] = c["doorway"]
+            self.alerts, self.visits_today, self._next_alert = kept, visits, next_id
+            self.events.extend(events)   # appendleft order: newest first, so extend keeps it
+            self._base_real, self._base_virtual, self.speed = clock
+            drafts = sum(1 for a in kept if a.record and a.record.get("status") == "draft")
+            self.log("settings", "Settings saved and applied" + (f" ({dropped} open alert(s) cleared)" if dropped else ""))
+        if not kept and not dropped:
+            return {"ok": True}
+        return {"ok": True, "kept_alerts": len(kept), "draft_records_kept": drafts, "open_alerts_cleared": dropped}
 
     # ------------------------------------------------------------------ view
 
@@ -696,7 +723,8 @@ class Engine:
                 "escalates_in_s": due, "history": a.history,
                 "description": r.description if r else None, "room": r.room if r else None,
                 "suggestions": r.suggestions()[:2] if r else [],
-                "max_level": a.max_level, "record": a.record, "backup_by": a.backup_by}
+                "max_level": a.max_level, "record": a.record, "backup_by": a.backup_by,
+                "created": a.created, "simulated": a.simulated}
 
     # ------------------------------------------------------------------ surviving a restart
 
@@ -909,7 +937,11 @@ def _sim_camera_frame(i: int, n: int) -> Callable[[Engine], object]:
             cam["tracks"] = [{"id": 7, "x1": fx - 0.065, "y1": 0.40, "x2": fx + 0.065, "y2": 0.86,
                               "side": 1 if fx < 0.485 else -1, "confirmed": i >= 2, "trail": trail}]
             crossed = fx >= 0.485 and (0.26 + 0.48 * (i - 1) / (n - 1)) < 0.485
-            e.camera("hall12", 1, 6.0, [{"track": 7, "direction": "out"}] if crossed else [], doorway=True)
+            e._simulating = True
+            try:
+                e.camera("hall12", 1, 6.0, [{"track": 7, "direction": "out"}] if crossed else [], doorway=True)
+            finally:
+                e._simulating = False
     return act
 
 
