@@ -72,6 +72,7 @@
     .nw-l3 .nw-badge, .nw-badge.nw-l3 { color: #fff; }
     a { color: inherit; text-decoration: none; }
     .nw-recform { display: none !important; }
+    .nw-contacts li { background: #fff !important; } .nw-cstat { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .nw-filed, .nw-draftbadge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
@@ -88,7 +89,7 @@
 <main id="doc"><p style="color:var(--nw-muted)">Loading the shift report…</p></main>
 <script src="/assets/nw.js"></script>
 <script>
-const { nav, esc, icon, LEVELS, SEVERITY, badge, timeline, recordForm, bindRecordForms, filedBadge, isDirty } = NW;
+const { contactsList, nav, esc, icon, LEVELS, SEVERITY, badge, timeline, recordForm, bindRecordForms, filedBadge, isDirty } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('report');
 $('navwrap').innerHTML = nav('/report/');
@@ -150,6 +151,7 @@ function render(r, camEvents) {
             <span>Highest level <b>${esc(lv)} · ${esc(LEVELS[lv].name)}</b></span>
             <span>Response <b>${s == null ? 'not acknowledged' : `${s} s`}</b></span>
             ${a.resolved ? `<span>Outcome <b>${esc(a.resolved)}</b></span>` : ''}</div>
+          ${(a.notifications || []).length ? `<div class="sub" style="margin:4px 0 6px"><b>Who was contacted</b></div>${contactsList(a.notifications)}<div style="height:10px"></div>` : ''}
           ${timeline(a.history)}
         </article>`;
       }).join('') : `<div class="nw-empty">${icon('shield')}<div><b>A quiet night</b>No alerts were raised.</div></div>`}

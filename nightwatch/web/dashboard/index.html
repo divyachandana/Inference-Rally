@@ -175,6 +175,10 @@
   .takeover.is-acked .to-sign b, .takeover.is-acked .to-sign .nw-ladder, .takeover.is-acked .to-facts, .takeover.is-acked .nw-tip { display: none; }
   .takeover.is-acked .to-title { font-size: 18px; margin: 0; }
   .takeover.is-acked .to-act { grid-auto-flow: column; } .takeover.is-acked .to-act .nw-btn { min-height: 44px; font-size: 15px; }
+  .nw-btn--help { background: transparent; border: 2px solid var(--nw-l2); color: #ffc79e; }
+  .nw-btn--help.armed { background: var(--nw-l2); color: #1a0d00; }
+  .takeover .nw-btn--help { min-height: 52px; font-size: 16px; }
+  .to-contacts { margin-top: 10px; } .to-contacts .nw-contacts { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } .to-contacts .nw-contacts li { background: rgba(7, 11, 20, .6); padding: 6px 10px; }
   /* backup + records */
   .a-backup { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 650;
               color: #ffd0a8; background: var(--nw-l2-bg); border: 1px solid rgba(255, 143, 63, .45); }
@@ -257,6 +261,7 @@
   <span class="nw-chip" id="c-visits"></span>
   <span class="nw-chip" id="c-ack"></span>
   <span class="nw-chip pair" id="c-pair" hidden></span>
+  <span class="nw-chip" id="c-calls" hidden></span>
 </div>
 <div class="lost" id="lost" hidden role="alert"></div>
 <button class="unlock" id="unlock" hidden>Click anywhere to enable alarm sound</button>
@@ -325,7 +330,7 @@
   </div></div></div>
 <script src="/assets/nw.js"></script>
 <script>
-const { toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
+const { arm, anyArmed, contactsList, notesKey, toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, limitFor, contactsDone, post } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
 $('screens').innerHTML = nav('/dashboard/', { newTab: true });
@@ -458,7 +463,10 @@ function timerHTML(a, s) {
   const cap = a.level < 3 ? `Level ${a.level + 1} if nobody responds` : 'Next contact step';
   return `<div class="a-timer"><span class="cap">${cap}</span>${ring(a.escalates_in_s, a.escalates_in_s / limitFor(a, s), cap)}</div>`;
 }
-function alertKey(a) { return [a.level, a.acked_by, a.backup_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
+let LIVE = false;
+const helpBtn = (a) => `<button class="nw-btn nw-btn--help" data-notify="${a.id}">${icon('phone')}<span class="lbl">${LIVE ? 'Call for help (REAL calls)' : 'Call for help'}</span></button>`;
+const contactsHTML = (a) => ((a.notifications || []).length ? `<div class="a-sec">Who's been contacted</div>${contactsList(a.notifications)}` : '');
+function alertKey(a) { return [LIVE, notesKey(a.notifications), a.level, a.acked_by, a.backup_by, a.history.length, a.title, a.escalates_in_s == null, contactsDone(a)].join('|'); }
 function alertHTML(a, s, compact) {
   if (compact) return compactHTML(a, s);
   const L = LEVELS[a.level];
@@ -475,10 +483,11 @@ function alertHTML(a, s, compact) {
     ${a.resident ? `<div class="a-who"><span>${icon('user')}${esc(a.resident)}${a.room ? ` · Room ${esc(a.room)}` : ''}</span>${a.description ? `<span>${icon('eye')}${esc(a.description)}</span>` : ''}</div>` : ''}
     ${a.backup_by ? `<div class="a-backup" role="status">${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b> · all staff phones alerted</div>` : ''}
     ${tip ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(tip)}</div>${more.map((m) => `<div class="nw-tip-more">${esc(m)}</div>`).join('')}</div></div>` : ''}
+    ${contactsHTML(a)}
     <div class="a-sec">Escalation history</div>
     ${timeline(a.history)}
     <div class="a-btns">${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
-      <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button></div>
+      <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button>${helpBtn(a)}</div>
   </article>`;
 }
 const simTag = (a) => (/simulated camera/i.test(a.title + ' ' + a.history.map((h) => h[1]).join(' ')) ? `<div class="sim-tag" role="note">${icon('play')}SIMULATED camera · demo data</div>` : '');
@@ -489,7 +498,8 @@ function compactHTML(a, s) {
     <h3 class="a-title">${esc(a.title)}</h3>${simTag(a)}
     ${a.backup_by ? `<div class="a-backup">${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b></div>` : ''}
     <div class="a-btns">${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
-      <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button></div>
+      <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button>${helpBtn(a)}</div>
+    ${contactsHTML(a)}
     <details><summary>Details, what has worked and history</summary>
       ${a.resident ? `<div class="a-who" style="margin-top:8px"><span>${icon('user')}${esc(a.resident)}${a.room ? ` · Room ${esc(a.room)}` : ''}</span>${a.description ? `<span>${icon('eye')}${esc(a.description)}</span>` : ''}</div>` : ''}
       ${tip ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(tip)}</div></div></div>` : ''}
@@ -514,7 +524,7 @@ function renderAlerts(s) {
   s.alerts.forEach((a, i) => {
     let el = box.querySelector(`.alert[data-id="${a.id}"]`);
     const compact = i >= 2, key = (compact ? 'c|' : '') + alertKey(a);
-    if (!el || el.dataset.key !== key) {
+    if (!el || (el.dataset.key !== key && !el.querySelector('.armed'))) {
       const tmp = document.createElement('div'); tmp.innerHTML = alertHTML(a, s, compact);
       const fresh = tmp.firstElementChild;
       el ? el.replaceWith(fresh) : box.appendChild(fresh);
@@ -659,7 +669,12 @@ function renderHeader(s) {
   const pair = s.pairing;
   $('c-pair').hidden = !pair;
   if (pair) $('c-pair').innerHTML = `${icon('phone')}Pair a phone · PIN <b class="pin">${String(pair.pin).replace(/\D/g, '')}</b> · <b>${Number(pair.devices) || 0}</b> paired`;
-  $('c-net').innerHTML = `${icon('wifiOff')}Internet needed <b>No</b>`;
+  LIVE = !!s.contacts_live;
+  $('c-calls').hidden = s.contacts_live == null;
+  $('c-calls').innerHTML = s.contacts_live ? `<span class="nw-live-calls">${icon('phone')}REAL calls/SMS ON</span>`
+    : `${icon('phone')}Contact calls <b>simulated</b>${s.twilio_configured ? '' : ' · no phone line set up'}`;
+  // Honest: watching never needs the internet; real calls/SMS do.
+  $('c-net').innerHTML = s.contacts_live ? `${icon('wifiOff')}Internet needed <b>only for calls/SMS</b>` : `${icon('wifiOff')}Internet needed <b>No</b>`;
   $('c-staff').innerHTML = `${icon('user')}Night staff on duty <b>${esc(s.night_staff)}</b>`;
   $('c-temp').innerHTML = `${icon('thermo')}Outside <b>${esc(s.outside_temp_c)} °C</b>`;
   $('c-visits').innerHTML = `${icon('door')}Visits today <b>${esc(s.stats.visits_today)}</b>`;
@@ -682,9 +697,9 @@ function renderTakeover(s) {
   const a = l3[0];
   takeoverId = a.id;
   box.classList.toggle('is-acked', !!a.acked_by);
-  const key = [a.id, a.acked_by, a.backup_by, a.title, a.suggestions[0], l3.length].join('|');
+  const key = [LIVE, notesKey(a.notifications), a.id, a.acked_by, a.backup_by, a.title, a.suggestions[0], l3.length].join('|');
   box.hidden = false;
-  if (key !== toKey) {
+  if (key !== toKey && !box.querySelector('.armed')) {
     toKey = key;
     box.innerHTML = `
       <div class="to-sign"><div class="disc">${icon('siren')}</div><b>EMERGENCY</b><span class="nw-ladder nw-l3" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
@@ -698,12 +713,14 @@ function renderTakeover(s) {
           ${a.backup_by ? `<span>${icon('phone')}Backup requested by <b>${esc(a.backup_by)}</b></span>` : ''}
         </div>
         ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">What has worked before</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div></div></div>` : ''}
+        ${(a.notifications || []).length ? `<div class="to-contacts"><div class="a-sec" style="color:#ffc2c8">Who's been contacted</div>${contactsList(a.notifications)}</div>` : ''}
         ${l3.length > 1 ? `<div class="to-more" style="margin-top:8px">+ ${l3.length - 1} more emergency alert${l3.length > 2 ? 's' : ''} below</div>` : ''}
       </div>
       <div class="to-act">
         ${a.acked_by ? `<div class="resp">${icon('walk')}${esc(a.acked_by)} responding</div>`
           : `<button class="nw-btn nw-btn--primary" data-ack="${a.id}">${icon('walk')}Acknowledge</button>`}
         <button class="nw-btn nw-btn--safe" data-res="${a.id}">${icon('check')}Found safe</button>
+        ${helpBtn(a)}
       </div>`;
   }
   box.querySelector('.to-where').textContent = whereNow(a, s);
@@ -782,6 +799,13 @@ document.addEventListener('click', async (e) => {
   if (handleCameraClick(e, 'nurse station', tick)) return;
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.ack) { b.disabled = true; const r = await act('/api/ack', { alert: +b.dataset.ack, by: 'Nurse station' }, "Acknowledge didn't reach NightWatch. Try again."); if (!r.ok) b.disabled = false; tick(); }
+  if (b.dataset.notify) {
+    if (!arm(b, LIVE ? 'Tap again: REALLY call/text contacts' : 'Tap again to call for help')) return;
+    b.disabled = true;
+    const r = await act('/api/notify', { alert: +b.dataset.notify, by: 'Nurse station' }, "Call for help didn't reach NightWatch. Try again.");
+    if (r.ok) { toast(LIVE ? 'Calling and texting the contacts now.' : 'Contacts notified (simulated: no real calls).', 'good'); setTimeout(() => { b.disabled = false; }, 3000); } else b.disabled = false;
+    tick(); return;
+  }
   if (b.dataset.res) { b.disabled = true; const r = await act('/api/resolve', { alert: +b.dataset.res, outcome: 'Found safe, returned to room' }, "Found safe didn't reach NightWatch. Try again."); if (!r.ok) b.disabled = false; tick(); }
 });
 

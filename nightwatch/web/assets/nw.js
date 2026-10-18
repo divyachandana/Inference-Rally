@@ -249,5 +249,42 @@
   const nav = (current, { newTab = false } = {}) => `<nav class="nw-nav" aria-label="NightWatch screens">${NAV.map(([href, label, ic]) =>
     `<a href="${href}"${href === current ? ' aria-current="page"' : ''}${newTab && href !== current ? ' target="_blank" rel="noopener"' : ''}>${icon(ic)}${label}</a>`).join('')}</nav>`;
 
-  window.NW = { toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
+  // ---------------------------------------------------------------- emergency contact fan-out
+  const ROLE = { on_call: ['phone', 'On-call supervisor'], family: ['heart', 'Family'], owner: ['shield', 'Facility owner'],
+    emergency_services: ['siren', 'Emergency services'], other: ['user', 'Contact'] };
+  const CSTAT = { queued: ['Queued', 'clock'], calling: ['Calling…', 'phone'], sent: ['Sent', 'check'], failed: ['Failed', 'wifiOff'], simulated: ['Simulated', 'play'] };
+  const CHANNEL = { call: 'call', sms: 'text', 'call+sms': 'call + text', simulated: 'simulated' };
+  // tr (optional): { roles: {role: name}, status: {status: label}, es: 'emergency-services line' } for other languages.
+  const contactRow = (n, tr = {}) => {
+    const [ic, roleEn] = ROLE[n.role] || ROLE.other;
+    const roleName = (tr.roles && tr.roles[n.role]) || roleEn;
+    const es = n.role === 'emergency_services';
+    // Emergency services are never really dialled by this build, whatever the server says.
+    const st = es ? 'simulated' : (CSTAT[n.status] ? n.status : 'queued');
+    const [labelEn, sic] = CSTAT[st];
+    const label = (tr.status && tr.status[st]) || labelEn;
+    const detail = es ? (tr.es || 'would be called per facility policy (simulated)') : [CHANNEL[n.channel] || n.channel, n.detail, n.at].filter(Boolean).join(' · ');
+    const nm = n.name && n.name !== roleName && n.name !== roleEn ? n.name : '';
+    return `<li>${icon(ic)}<span class="who"><b>${esc(nm || roleName)}</b>${nm ? ` · ${esc(roleName)}` : ''}<small>${esc(detail)}</small></span>
+      <span class="nw-cstat is-${st}">${icon(sic)}${esc(label)}</span></li>`;
+  };
+  const contactsList = (notes, tr) => (notes && notes.length ? `<ul class="nw-contacts">${notes.map((n) => contactRow(n, tr)).join('')}</ul>` : '');
+  const notesKey = (notes) => (notes || []).map((n) => `${n.contact_id}:${n.status}`).join(',');
+
+  // Tap once to arm, again within 4 s to send. Returns true when the second tap lands.
+  const armedBtns = new Map();
+  const arm = (btn, armedText) => {
+    const label = btn.querySelector('.lbl');
+    if (armedBtns.has(btn)) {   // second tap: confirmed, put the button back as it was
+      const m = armedBtns.get(btn); clearTimeout(m.t); armedBtns.delete(btn); btn.classList.remove('armed'); if (label) label.textContent = m.before; return true;
+    }
+    const before = label ? label.textContent : '';
+    if (label) label.textContent = armedText;
+    btn.classList.add('armed');
+    armedBtns.set(btn, { before, t: setTimeout(() => { armedBtns.delete(btn); btn.classList.remove('armed'); if (label) label.textContent = before; }, 4000) });
+    return false;
+  };
+  const anyArmed = () => armedBtns.size > 0;
+
+  window.NW = { arm, anyArmed, ROLE, contactsList, notesKey, toast, act, sortAlerts, tracker, announce, nav, nightBand, recordForm, bindRecordForms, filedBadge, isDirty, audio, tone, trapFocus, typing, camState, camStateHTML, cameraControls, syncCameraControls, handleCameraClick, offlineBadge, esc, icon, paths: P, LEVELS, SEVERITY, badge, ladder, ring, updateRing, timeline, histKind, limitFor, contactsDone, post };
 })();

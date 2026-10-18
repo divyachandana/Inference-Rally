@@ -79,6 +79,8 @@
                  color: #ffd0a8; background: var(--nw-l2-bg); border: 1px solid rgba(255, 143, 63, .5); }
   .backup-line .nw-ico { color: var(--nw-l2); width: 22px; height: 22px; }
   .nw-btn--backup { background: transparent; border: 2px solid var(--nw-l2); color: #ffc79e; }
+  .nw-btn--help { background: transparent; border: 2px solid var(--nw-l3); color: #ffb3bb; }
+  .nw-btn--help.armed { background: var(--nw-l3); color: #120a02; }
   .nw-btn--backup.armed { background: var(--nw-l2); color: #1a0d00; }
   .todo { margin-top: 18px; border: 1px dashed var(--nw-l1); border-radius: 18px; padding: 14px; background: var(--nw-l1-bg); }
   .todo h2 { margin: 0 0 10px; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--nw-l1); display: flex; gap: 8px; align-items: center; }
@@ -127,7 +129,7 @@
 
 <script src="/assets/nw.js"></script>
 <script>
-const { esc, icon, LEVELS, timeline, contactsDone, post, audio, trapFocus, act, toast, sortAlerts, tracker, announce } = NW;
+const { contactsList, notesKey, esc, icon, LEVELS, timeline, contactsDone, post, audio, trapFocus, act, toast, sortAlerts, tracker, announce } = NW;
 const $ = (id) => document.getElementById(id);
 $('logo').innerHTML = icon('logo');
 // No 'Offline · still protecting' badge here: on a phone, offline means it is NOT protected (see the red card).
@@ -148,7 +150,9 @@ const STR = {
         skip: 'Skip for now', down: 'Not connected: you will NOT get alerts', downSub: 'This phone lost contact with the nurse-station laptop. Reconnect to the facility Wi-Fi now, or tell the nurse station.',
         soundOff: 'Sound and vibration are OFF · tap to turn on', safeArm: 'Tap again: found safe', alerts: (n) => `${n} alerts`,
         failAck: "\"I'm going\" didn't reach the laptop. Tap again.", failSafe: "\"Found safe\" didn't reach the laptop. Tap again.", failBackup: "Backup request didn't reach the laptop. Tap again.",
-        roomN: (r) => `Room ${r}`, newAlert: 'New alert' },
+        roomN: (r) => `Room ${r}`, newAlert: 'New alert', help: 'Call for help', helpReal: 'Call for help (REAL calls)', helpArm: 'Tap again to call contacts',
+        helpArmReal: 'Tap again: REALLY call/text contacts', helpDone: 'Contacts notified (simulated: no real calls).', helpDoneReal: 'Calling and texting the contacts now.',
+        failHelp: "Call for help didn't reach the laptop. Tap again.", contacted: "Who's been contacted", ctr: null },
   es: { phone: 'Teléfono del turno de noche', start: 'Empezar turno', startSub: 'Activa sonido y vibración para las alertas', onShift: 'En turno · sonido y vibración activados',
         connecting: 'Conectando…', unreachable: 'No se puede conectar', wifi: 'Compruebe que está en el Wi-Fi del centro.', quiet: 'Todo tranquilo',
         quietSub: (a, b) => `${a} de ${b} residentes en la cama. Le avisaremos si alguien le necesita.`, night: 'NOCHE', day: 'DÍA',
@@ -162,7 +166,11 @@ const STR = {
         skip: 'Ahora no', down: 'Sin conexión: NO recibirá alertas', downSub: 'Este teléfono perdió el contacto con el portátil del control de enfermería. Vuelva a conectarse al Wi-Fi del centro o avise al control.',
         soundOff: 'Sonido y vibración APAGADOS · toque para activar', safeArm: 'Toque otra vez: a salvo', alerts: (n) => `${n} alertas`,
         failAck: '"Voy" no llegó al portátil. Toque otra vez.', failSafe: '"Encontrado a salvo" no llegó al portátil. Toque otra vez.', failBackup: 'La petición de ayuda no llegó al portátil. Toque otra vez.',
-        roomN: (r) => `Habitación ${r}`, newAlert: 'Nueva alerta' },
+        roomN: (r) => `Habitación ${r}`, newAlert: 'Nueva alerta', help: 'Llamar para pedir ayuda', helpReal: 'Llamar para pedir ayuda (llamadas REALES)', helpArm: 'Toque otra vez para avisar a los contactos',
+        helpArmReal: 'Toque otra vez: llamar/escribir DE VERDAD', helpDone: 'Contactos avisados (simulado: sin llamadas reales).', helpDoneReal: 'Llamando y escribiendo a los contactos ahora.',
+        failHelp: 'La llamada de ayuda no llegó al portátil. Toque otra vez.', contacted: 'A quién se ha avisado',
+        ctr: { roles: { on_call: 'Supervisor de guardia', family: 'Familia', owner: 'Dirección del centro', emergency_services: 'Servicios de emergencia', other: 'Contacto' },
+               status: { queued: 'En cola', calling: 'Llamando…', sent: 'Enviado', failed: 'Falló', simulated: 'Simulado' }, es: 'se llamaría según el protocolo del centro (simulado)' } },
 };
 let lang = store.get('nw-lang') === 'es' ? 'es' : 'en';
 const T = (k, ...a) => { const v = STR[lang][k] ?? STR.en[k]; return typeof v === 'function' ? v(...a) : v; };
@@ -239,10 +247,12 @@ function card(a) {
       ${a.suggestions[0] ? `<div class="nw-tip">${icon('bulb')}<div><div class="nw-tip-k">${esc(T('helps'))}</div><div class="nw-tip-v">${esc(a.suggestions[0])}</div>${a.suggestions[1] ? `<div class="nw-tip-more">${esc(a.suggestions[1])}</div>` : ''}</div></div>` : ''}
       ${a.acked_by ? `<div class="responding">${icon('walk')}${esc(T('responding', a.acked_by))}</div>` : ''}
       ${a.backup_by ? `<div class="backup-line" role="status">${icon('phone')}${esc(T('backupBy', a.backup_by))}</div>` : ''}
+      ${(a.notifications || []).length ? `<div class="pick" style="margin-top:14px">${esc(T('contacted'))}</div>${contactsList(a.notifications, T('ctr') || undefined)}` : ''}
       <div class="btns">
         ${a.acked_by ? '' : `<button class="nw-btn nw-btn--primary nw-btn--lg" data-ack="${a.id}">${icon('walk')}${esc(T('going'))}</button>`}
         <button class="nw-btn nw-btn--safe nw-btn--lg" data-res="${a.id}">${icon('check')}<span>${esc(T('safe'))}</span></button>
         ${a.backup_by ? '' : `<button class="nw-btn nw-btn--backup nw-btn--lg" data-backup="${a.id}" aria-describedby="bk-${a.id}">${icon('phone')}<span>${esc(T('backup'))}</span></button><span id="bk-${a.id}" class="nw-sr-only">${esc(T('backupArm'))}</span>`}
+        <button class="nw-btn nw-btn--help nw-btn--lg" data-notify="${a.id}">${icon('siren')}<span>${esc(T(LIVE ? 'helpReal' : 'help'))}</span></button>
       </div>
       <details><summary>${esc(T('history', a.history.length))}</summary>${timeline(a.history)}</details>
     </div>
@@ -310,6 +320,18 @@ document.addEventListener('click', async (e) => {
     const closed = lastState && lastState.recent.find((x) => x.id === id);
     if (closed && closed.record && closed.record.status !== 'filed') openSheet(closed); else if (a) openSheet({ ...a });
   }
+  if (b.dataset.notify) {
+    const id = 'n' + b.dataset.notify;
+    if (!armed[id]) {   // arm-to-confirm, like Need backup
+      armed[id] = setTimeout(() => { delete armed[id]; b.classList.remove('armed'); b.querySelector('span').textContent = T(LIVE ? 'helpReal' : 'help'); }, 4000);
+      b.classList.add('armed'); b.querySelector('span').textContent = T(LIVE ? 'helpArmReal' : 'helpArm'); return;
+    }
+    clearTimeout(armed[id]); delete armed[id]; b.disabled = true;
+    const r = await act('/api/notify', { alert: +b.dataset.notify, by: by() }, T('failHelp'));
+    if (r.ok) { toast(T(LIVE ? 'helpDoneReal' : 'helpDone'), 'good'); b.classList.remove('armed'); b.querySelector('span').textContent = T(LIVE ? 'helpReal' : 'help'); setTimeout(() => { b.disabled = false; }, 3000); }
+    else { b.disabled = false; b.classList.remove('armed'); b.querySelector('span').textContent = T(LIVE ? 'helpReal' : 'help'); }
+    tick(); return;
+  }
   if (b.dataset.backup) {
     const id = b.dataset.backup;
     if (!armed[id]) {   // first tap arms, second tap within 4 s sends
@@ -331,13 +353,15 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ------------------------------------------------------------------ render */
+let LIVE = false;
 let lastKey = '', todoKey = '', lastState = null;
 function render(s) {
   $('clock').textContent = s.clock.slice(0, 5);
   $('mode').className = 'm ' + (s.night ? 'is-night' : 'is-day');
   $('mode').innerHTML = s.night ? `${icon('moon')}${esc(T('night'))}` : `${icon('sun')}${esc(T('day'))}`;
   $('net').textContent = T('net', s.facility);
-  const key = shift + JSON.stringify(s.alerts.map((a) => [a.id, a.level, a.acked_by, a.backup_by, a.history.length, a.escalates_in_s == null, a.title, contactsDone(a)]));
+  LIVE = !!s.contacts_live;
+  const key = shift + LIVE + JSON.stringify(s.alerts.map((a) => [notesKey(a.notifications), a.id, a.level, a.acked_by, a.backup_by, a.history.length, a.escalates_in_s == null, a.title, contactsDone(a)]));
   for (const a of s.alerts) { const el = document.querySelector(`[data-cd="${a.id}"]`); if (el) el.textContent = `${a.escalates_in_s} s`; }
   const cnt = { 3: 0, 2: 0, 1: 0 }; s.alerts.forEach((a) => { cnt[a.level]++; });
   $('summ').innerHTML = s.alerts.length > 1 ? `<nav class="summ" aria-label="${esc(T('alerts', s.alerts.length))}"><b>${esc(T('alerts', s.alerts.length))}</b>${s.alerts.map((a) =>

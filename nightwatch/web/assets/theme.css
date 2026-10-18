@@ -295,6 +295,22 @@ a.nw-brand:hover .nw-brand-name { text-decoration: underline; text-underline-off
   color: var(--nw-ink); cursor: pointer; display: grid; place-items: center; flex: none; }
 .nw-x:hover { background: var(--nw-raised); }
 
+/* ---------------------------------------------------------------- who has been contacted */
+.nw-contacts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.nw-contacts li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px;
+  border-radius: 10px; background: var(--nw-bg-2); border: 1px solid var(--nw-line); font-size: 13.5px; }
+.nw-contacts .who { min-width: 0; } .nw-contacts .who b { color: var(--nw-ink); font-weight: 650; }
+.nw-contacts .who small { display: block; color: var(--nw-muted); font-size: 12px; overflow-wrap: anywhere; }
+.nw-contacts .nw-ico { width: 18px; height: 18px; color: var(--nw-muted); }
+.nw-cstat { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em;
+  white-space: nowrap; border: 1px solid var(--nw-line-strong); color: var(--nw-ink-2); }
+.nw-cstat.is-sent { color: var(--nw-ok); border-color: rgba(61, 220, 151, .45); background: rgba(61, 220, 151, .1); }
+.nw-cstat.is-calling, .nw-cstat.is-queued { color: var(--nw-accent); border-color: rgba(138, 180, 255, .45); background: rgba(138, 180, 255, .1); }
+.nw-cstat.is-failed { color: #ffb3bb; border-color: var(--nw-l3); background: var(--nw-l3-bg); }
+.nw-cstat.is-simulated { color: var(--nw-l1); border-color: rgba(246, 195, 68, .45); border-style: dashed; }
+.nw-live-calls { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800;
+  background: var(--nw-l3); color: #120a02; }
+
 /* ---------------------------------------------------------------- toasts (action feedback) */
 .nw-toasts { position: fixed; z-index: 120; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
   display: grid; gap: 8px; width: min(520px, calc(100vw - 32px)); pointer-events: none; }
