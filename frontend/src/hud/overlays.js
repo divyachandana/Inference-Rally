@@ -52,6 +52,7 @@ export class Overlays {
       .map((racer) => ({ racer, stats: results[racer.id] }))
       .sort((a, b) => (a.stats.place ?? 99) - (b.stats.place ?? 99));
     const winner = ranked[0];
+    const rogues = racers.some((racer) => racer.rogue);
     const rows = ranked
       .map(({ racer, stats }) => {
         const human = racer.runtime === 'human';
@@ -66,6 +67,7 @@ export class Overlays {
           <td>${human ? '-' : stats.tokens_total}</td>
           <td>${stats.wrong_turns}</td>
           <td>${efficiency}%</td>
+          ${rogues ? `<td>${racer.rogue ? stats.cheats : '-'}</td>` : ''}
         </tr>`;
       })
       .join('');
@@ -73,7 +75,7 @@ export class Overlays {
     this.root.innerHTML = `
       <div class="podium-winner" style="--racer:${winner.racer.color}">${winner.racer.label} WINS!</div>
       <table class="results">
-        <thead><tr><th>POS</th><th>RACER</th><th>TIME</th><th>TOK/S</th><th>THINK MS</th><th>TOKENS</th><th>WRONG</th><th>ROUTE</th></tr></thead>
+        <thead><tr><th>POS</th><th>RACER</th><th>TIME</th><th>TOK/S</th><th>THINK MS</th><th>TOKENS</th><th>WRONG</th><th>ROUTE</th>${rogues ? '<th>CHEATS</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="blink">ENTER = REMATCH · N = NEW MAZE</div>`;

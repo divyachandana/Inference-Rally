@@ -32,6 +32,7 @@ export const CAR = Object.freeze({
   width: 2.1,
   turnPortion: 0.22, // share of a segment spent rotating at the junction
   uturnPortion: 0.42,
+  jumpHeight: 6, // peak of a rogue's hop over a hedge (world units)
 });
 
 export const RENDER = Object.freeze({
@@ -59,7 +60,11 @@ export const COLORS = Object.freeze({
 export const MODES = Object.freeze({
   demo: { profile: 'demo', label: 'DEMO' },
   play: { profile: 'play', label: 'PLAY' },
+  unfair: { profile: 'unfair', label: 'UNFAIR' },
 });
+
+/** Order the G key cycles through. */
+export const MODE_CYCLE = Object.freeze(['demo', 'play', 'unfair']);
 
 /** Arrow keys for the human player. */
 export const HUMAN_KEYS = Object.freeze({

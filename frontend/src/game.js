@@ -216,6 +216,23 @@ export class Game {
       setTimeout(() => entry.arrows.clear(), 450);
     },
 
+    cheat(event, live) {
+      const entry = this.race.racers.get(event.racer);
+      entry.stats = event.stats;
+      const percent = Math.round(event.probability * 100);
+      const what = event.kind === 'jump' ? 'HEDGE JUMP' : 'DRONE';
+      if (event.used) {
+        const left = event.kind === 'jump' ? event.jumps_left : event.drones_left;
+        entry.hud.showBanner(`${what}! LAYA ${percent}% · ${left} LEFT`, 'bad');
+        entry.hud.setStatus('thinking', event.kind === 'jump' ? 'JUMPING!' : 'DRONE…');
+      } else {
+        entry.hud.showBanner(`LAYA: NO ${what.toLowerCase()} (${percent}%)`, 'info');
+      }
+      this.leaderboard.updateStats(event.racer, event.stats);
+      this.leaderboard.addCheat(entry.racer, event);
+      if (live && event.used) this.sound.cheat();
+    },
+
     incident(event, live) {
       const entry = this.race.racers.get(event.racer);
       const kind = ['dead_end', 'invalid_move', 'offline', 'timeout'].includes(event.kind) ? 'bad' : 'warn';

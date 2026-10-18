@@ -1,7 +1,7 @@
 /**
  * Entry point: wires the DOM, the event stream, keyboard controls and the game.
  *
- * Keys: Enter = start / rematch · N = new maze · G = demo/play mode · M = mute
+ * Keys: Enter = start / rematch · N = new maze · G = demo/play/unfair mode · M = mute
  *       P = retro pixels on/off · 1-3 = focus one racer · 0 / Esc = split screen
  *       Arrows = drive (play mode: ← left, ↑ straight, → right, ↓ U-turn)
  */
@@ -9,7 +9,7 @@
 import '@fontsource/press-start-2p';
 import './styles.css';
 import { Sound } from './audio/sound.js';
-import { MODES } from './config.js';
+import { MODE_CYCLE, MODES } from './config.js';
 import { Game } from './game.js';
 import { EventStream, previewRace, sendHumanMove, startRace } from './net.js';
 
@@ -33,13 +33,14 @@ function showMode(next) {
   const button = document.querySelector('#btn-mode');
   button.textContent = `MODE: ${MODES[mode].label}`;
   button.classList.toggle('play', mode === 'play');
+  button.classList.toggle('unfair', mode === 'unfair');
 }
 
 const stream = new EventStream(
   (event) => {
     if (event.type === 'race_init') {
       currentSeed = event.maze.seed;
-      showMode(event.racers.some((racer) => racer.runtime === 'human') ? 'play' : 'demo');
+      showMode(modeOf(event.racers));
     }
     game.handle(event);
   },
@@ -50,6 +51,12 @@ const stream = new EventStream(
   },
 );
 stream.connect();
+
+/** Which mode a lineup belongs to: a rogue means UNFAIR, a human means PLAY. */
+function modeOf(racers) {
+  if (racers.some((racer) => racer.rogue)) return 'unfair';
+  return racers.some((racer) => racer.runtime === 'human') ? 'play' : 'demo';
+}
 
 async function launch(seed) {
   sound.unlock(); // a key press is the user gesture browsers require for audio
@@ -63,7 +70,7 @@ const actions = {
   Enter: () => launch(currentSeed),
   n: () => launch(Math.floor(Math.random() * 100000)),
   g: async () => {
-    const next = mode === 'demo' ? 'play' : 'demo';
+    const next = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
     showMode(next);
     const result = await previewRace(MODES[next].profile);
     if (result.error) dom.status.textContent = result.error;

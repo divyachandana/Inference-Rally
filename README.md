@@ -24,15 +24,17 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the plan and architecture, and
 |---|---|
 | ![PLAY mode race](docs/images/play-race.png) | ![Results screen](docs/images/results.png) |
 
-## Two modes
+## Three modes
 
 | Mode | Racers | Needs |
 |---|---|---|
 | **DEMO** (default) | **Gemma-4-E2B** vs **Qwen3-1.7B**, both on the Snapdragon NPU (real, ExecuTorch + QNN) | the QNN bundle |
 | **PLAY** | **DC (you, arrow keys)** vs **Gemma-4-E2B** and **Qwen3-1.7B** on the NPU (both real) | the QNN bundle |
+| **UNFAIR** | Honest **Gemma-4-E2B** vs a **rogue Qwen3-1.7B** that cheats when **Laya** says so (all three on the NPU) | QNN bundle + Laya |
 
-Switch with **G** (or the MODE button). Lineups live in `racers.yaml` (`demo`, `play`, and `sim`, which
-is fully simulated and runs on any machine: `python -m inference_rally.server --profile sim`).
+Switch with **G** (or the MODE button: DEMO → PLAY → UNFAIR). Lineups live in `racers.yaml` (`demo`,
+`play`, `unfair`, and `sim`, which is fully simulated and runs on any machine:
+`python -m inference_rally.server --profile sim`).
 
 DEMO and PLAY race only real models. Both share the one NPU during a race, so each runs slower than
 it would alone (~8–9 tokens/s instead of ~12–14). The `sim` profile's racers are labelled **SIM**.
@@ -55,6 +57,32 @@ dimensions: the Qwen3 `.pte` was exported with a 3-D mask and the Gemma one with
 runner that indexes fixed dimensions crashes on one of them right after prefill.
 
 If an NPU host can't start, its car shows "MODEL OFFLINE" and keeps going with fallback moves.
+
+## UNFAIR mode: the rogue and Laya
+
+The rogue (red car, `rogue:` in `racers.yaml`) may break the rules:
+
+| Cheat | What happens | Cost | Per race |
+|---|---|---|---|
+| **Hedge jump** | Hops over the bushes to the neighbouring junction where there is no road | +1.5 s | 3 |
+| **Drone peek** | When it is circling, a drone shows the best road and the car takes it | 2 s | 2 |
+
+Code spots a cheat only when it would help: a jump must cut the rogue's route by at least 2 road
+blocks, a drone is offered only when the rogue keeps revisiting roads. Then
+[Laya](https://huggingface.co/convaiinnovations/laya), a ModernBERT decision model running on the NPU
+(~0.3 s per question), answers a yes/no question about the situation, and the rogue cheats if Laya
+says yes with probability ≥ `threshold` (0.4). The HUD shows Laya's call ("HEDGE JUMP! LAYA 52%" or
+"LAYA: NO drone (17%)"), the car arcs over the hedge, and the results table counts each racer's cheats.
+
+Laya is a text classifier, not a calculator, so the situation is described in words ("a huge shortcut
+that skips most of the route", "the rival is about to win the race") rather than numbers; with numbers
+its answers barely moved. The jump and drone questions and the 0.4 threshold were tuned on sample
+situations: Laya takes good and huge shortcuts, mostly skips tiny ones, and flies the drone when truly
+lost with the rival close.
+
+Laya's host code needs PyTorch + transformers, so the game runs it via `scripts/laya_bridge.py` in the
+Python set under `laya:` (`C:\dev\et-venv` here), loading the QNN-compiled Laya from the local
+`laya_x_elite` folder set as `laya_dir`. Output goes to `logs/laya.log`. If Laya can't start, the rogue simply races honestly.
 
 ## Quick start (Windows on Snapdragon)
 
@@ -112,7 +140,7 @@ folder (next to its `qnn_executorch_backend.dll`).
 |---|---|
 | Enter | Start / rematch (same maze) |
 | N | New random maze |
-| G | Switch DEMO / PLAY |
+| G | Switch DEMO / PLAY / UNFAIR |
 | ← ↑ → | Drive at a junction (PLAY): left / straight / right |
 | ↓ | U-turn (PLAY) |
 | M | Sound on/off |
@@ -125,6 +153,7 @@ folder (next to its `qnn_executorch_backend.dll`).
 - `src/inference_rally/` – Python game server
   - `maze.py` seeded maze + A* · `race.py` race engine · `deciders.py` racers' brains: simulated, models on the NPU, human
   - `qnn_host.py` launches `qnn_llm_host.exe` and speaks its named-pipe protocol
+  - `rogue.py` spots useful cheats and describes them for Laya · `laya.py` runs Laya via `scripts/laya_bridge.py`
   - `prompts.py` junction prompt + reply parsing · `metrics.py` TTFT / tokens/sec timing
   - `models.py` typed config + event schema · `server.py` Starlette + Server-Sent Events
 - `frontend/` – Three.js split-screen game (Vite)

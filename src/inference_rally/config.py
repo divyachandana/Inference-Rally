@@ -20,6 +20,7 @@ from inference_rally.deciders import (
     SimulatedDecider,
 )
 from inference_rally.errors import ConfigError
+from inference_rally.laya import LayaSettings
 from inference_rally.maze import Maze
 from inference_rally.models import RacerSpec, RaceSettings
 from inference_rally.qnn_host import QnnHostSettings, get_host
@@ -32,6 +33,7 @@ class AppConfig(BaseModel):
 
     race: RaceSettings
     qnn: QnnHostSettings | None = None
+    laya: LayaSettings | None = None
     active_profile: str
     profiles: dict[str, list[RacerSpec]]
 

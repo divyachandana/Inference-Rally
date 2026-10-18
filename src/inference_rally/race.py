@@ -11,7 +11,7 @@ import logging
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from inference_rally.deciders import Decider
@@ -19,6 +19,7 @@ from inference_rally.errors import DeciderError, DecisionTimeoutError, InvalidMo
 from inference_rally.maze import Heading, Maze, Move, Node
 from inference_rally.metrics import TokenMeter
 from inference_rally.models import (
+    CheatEvent,
     CountdownEvent,
     DecisionEvent,
     DecisionMetrics,
@@ -40,16 +41,23 @@ from inference_rally.models import (
     TokenEvent,
 )
 from inference_rally.prompts import build_messages, parse_move
+from inference_rally.rogue import CheatPlan, plan_cheat
 
 logger = logging.getLogger(__name__)
 
 # Publishing is synchronous on purpose: events reach subscribers in exactly the order
 # they happen (a late live-token update can never overtake its decision).
 EmitFn = Callable[[RaceEvent], None]
+# Answers a yes/no question about a situation with a probability (Laya on the NPU).
+CheatJudge = Callable[[str, str], Awaitable[float]]
 
 
 _FAILURE_WHY = {"invalid_move": "invalid reply", "timeout": "too slow", "offline": "model offline"}
-_FAILURE_TEXT = {"invalid_move": "Invalid answer!", "timeout": "Too slow!", "offline": "Model offline!"}
+_FAILURE_TEXT = {
+    "invalid_move": "Invalid answer!",
+    "timeout": "Too slow!",
+    "offline": "Model offline!",
+}
 WARMUP_TIMEOUT_S = 90.0
 
 
@@ -73,6 +81,8 @@ class RacerState:
     heading: Heading
     visits: Counter[Node] = field(default_factory=Counter)
     stats: RacerStats = field(default_factory=RacerStats)
+    jumps_left: int = 0
+    drones_left: int = 0
 
 
 class RaceEngine:
@@ -84,6 +94,7 @@ class RaceEngine:
         racers: list[tuple[RacerSpec, Decider]],
         settings: RaceSettings,
         emit: EmitFn,
+        judge: CheatJudge | None = None,
     ) -> None:
         """Prepare a race.
 
@@ -92,11 +103,13 @@ class RaceEngine:
             racers: Each racer's spec with the decider that drives it.
             settings: Timing and limits.
             emit: Function that publishes an event (e.g. to the SSE hub).
+            judge: Decides whether a rogue racer cheats; without one, nobody cheats.
         """
         self.race_id = uuid.uuid4().hex[:8]
         self._maze = maze
         self._settings = settings
         self._emit = emit
+        self._judge = judge
         self._clock_start = time.perf_counter()
         self._finish_order: list[str] = []
         start_heading = maze.initial_heading()
@@ -106,6 +119,9 @@ class RaceEngine:
         ]
         for racer in self._racers:
             racer.visits[maze.start] += 1
+            if racer.spec.rogue:
+                racer.jumps_left = racer.spec.rogue.jumps
+                racer.drones_left = racer.spec.rogue.drones
 
     def now(self) -> float:
         """Seconds since the race was created, rounded for compact events."""
@@ -150,6 +166,8 @@ class RaceEngine:
 
     async def _run_racer(self, racer: RacerState) -> None:
         while racer.node != self._maze.exit:
+            if racer.spec.rogue and await self._try_cheat(racer):
+                continue
             if self._maze.is_junction(racer.node, racer.heading):
                 if racer.stats.decisions >= self._settings.max_decisions:
                     logger.info("Racer %s hit the decision limit (DNF)", racer.spec.id)
@@ -211,7 +229,9 @@ class RaceEngine:
         except DecisionTimeoutError:
             return self._fallback(racer, options, started, "timeout")
         except DeciderError:
-            logger.warning("Decider for %s failed; using fallback move", racer.spec.id, exc_info=True)
+            logger.warning(
+                "Decider for %s failed; using fallback move", racer.spec.id, exc_info=True
+            )
             return self._fallback(racer, options, started, "offline")
 
         try:
@@ -289,6 +309,102 @@ class RaceEngine:
             racer.stats.dead_ends += 1
             self._incident(racer, "dead_end", "Dead end!")
 
+    # ----------------------------------------------------------------------- cheating
+
+    async def _try_cheat(self, racer: RacerState) -> bool:
+        """Offer the rogue a useful cheat, let Laya decide, and carry it out.
+
+        Returns:
+            True if the rogue cheated (and has already moved), False to drive normally.
+        """
+        rogue = racer.spec.rogue
+        if rogue is None or self._judge is None:
+            return False
+        plan = plan_cheat(
+            self._maze,
+            racer.node,
+            racer.heading,
+            racer.visits,
+            rogue,
+            racer.jumps_left,
+            racer.drones_left,
+            self._rival_distance(),
+        )
+        if plan is None:
+            return False
+
+        started = time.perf_counter()
+        try:
+            probability = await self._judge(plan.state, plan.question)
+        except DeciderError:
+            logger.warning("Laya failed; no more cheats this race", exc_info=True)
+            self._judge = None
+            self._incident(racer, "offline", "Laya offline!")
+            return False
+        used = probability >= rogue.threshold
+        if used:
+            racer.stats.cheats += 1
+            if plan.kind == "jump":
+                racer.jumps_left -= 1
+            else:
+                racer.drones_left -= 1
+        self._emit(
+            CheatEvent(
+                t=self.now(),
+                racer=racer.spec.id,
+                kind=plan.kind,
+                probability=round(probability, 3),
+                used=used,
+                laya_ms=round((time.perf_counter() - started) * 1000, 1),
+                jumps_left=racer.jumps_left,
+                drones_left=racer.drones_left,
+                stats=racer.stats,
+            )
+        )
+        if used:
+            await self._cheat(racer, plan, rogue.jump_penalty_s, rogue.drone_time_s)
+        return used
+
+    async def _cheat(
+        self, racer: RacerState, plan: CheatPlan, jump_penalty_s: float, drone_time_s: float
+    ) -> None:
+        if plan.kind == "drone":
+            # The drone shows the best road; the car follows it without asking its model.
+            await asyncio.sleep(drone_time_s)
+            options = self._maze.options(racer.node, racer.heading)
+            move = min(options, key=lambda m: self._maze.distance_to_exit(options[m]))
+            await self._drive(racer, move)
+            return
+        assert plan.target is not None
+        src = racer.node
+        racer.heading = Heading.between(src, plan.target)
+        racer.node = plan.target
+        racer.visits[plan.target] += 1
+        racer.stats.segments_driven += 1
+        duration = self._settings.segment_time_s + jump_penalty_s
+        self._emit(
+            DriveEvent(
+                t=self.now(),
+                racer=racer.spec.id,
+                src=src,
+                dst=plan.target,
+                heading=racer.heading,
+                duration_s=duration,
+                progress=self._progress(plan.target),
+                jump=True,
+            )
+        )
+        await asyncio.sleep(duration)
+
+    def _rival_distance(self) -> int | None:
+        """Road blocks between the leading honest racer still on track and the exit."""
+        honest = [
+            self._maze.distance_to_exit(r.node)
+            for r in self._racers
+            if r.spec.rogue is None and r.node != self._maze.exit
+        ]
+        return min(honest, default=None)
+
     def _only_move(self, racer: RacerState) -> Move:
         """The single sensible move where there is no choice: ahead, or back at a dead end."""
         options = self._maze.options(racer.node, racer.heading)
@@ -353,6 +469,7 @@ class RaceEngine:
                     runtime=r.spec.runtime,
                     color=r.spec.color,
                     heading=r.heading,
+                    rogue=r.spec.rogue is not None,
                 )
                 for r in self._racers
             ],

@@ -89,6 +89,17 @@ export class Leaderboard {
     while (this.feed.children.length > HUD.feedLength) this.feed.lastChild.remove();
   }
 
+  /** A rogue's cheat in the feed: what Laya was asked and whether it said yes. */
+  addCheat(racer, cheat) {
+    const line = el('div', `feed-line cheat${cheat.used ? '' : ' declined'}`, this.feed);
+    line.style.setProperty('--racer', racer.color);
+    el('b', '', line, racer.label);
+    const what = cheat.kind === 'jump' ? 'JUMP' : 'DRONE';
+    el('span', '', line, ` ${cheat.used ? what : `NO ${what}`} ${Math.round(cheat.probability * 100)}%`);
+    this.feed.prepend(line);
+    while (this.feed.children.length > HUD.feedLength) this.feed.lastChild.remove();
+  }
+
   /** Hide the map (play mode) so the human gets no more information than the models. */
   setMapLocked(locked) {
     this.lock.hidden = !locked;

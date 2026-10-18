@@ -30,6 +30,7 @@ export class Car {
     this.thinking = false;
     this.finished = false;
     this.speed = 0; // world units/sec, used for engine sound and camera feel
+    this.hop = 0; // height above the road during a hedge jump
     this._lastBase = this.base.clone();
     this.applyTransform(0);
   }
@@ -65,6 +66,7 @@ export class Car {
       start: event.t,
       duration: event.duration_s,
       uturn: isUturn,
+      jump: Boolean(event.jump),
     };
   }
 
@@ -74,6 +76,7 @@ export class Car {
     this.base.copy(this.drive.to);
     this.yaw = this.drive.toYaw;
     this.drive = null;
+    this.hop = 0;
   }
 
   /**
@@ -103,7 +106,12 @@ export class Car {
     // brake into the next one (ease in/out), which reads as "slowing at junctions".
     const travel = drive.uturn ? Math.max(0, (p - turnPortion) / (1 - turnPortion)) : p;
     this.base.lerpVectors(drive.from, drive.to, easeInOutQuad(travel));
-    if (p >= 1) this.drive = null;
+    // A rogue's hedge jump: arc up and over the bushes between the two junctions.
+    this.hop = drive.jump ? Math.sin(Math.PI * travel) * CAR.jumpHeight : 0;
+    if (p >= 1) {
+      this.drive = null;
+      this.hop = 0;
+    }
   }
 
   applyTransform(wallTime) {
@@ -113,7 +121,7 @@ export class Car {
 
     // Idle engine shake while waiting for the model, brake lights on when stopped.
     const idle = this.speed < 0.5 && !this.finished;
-    this.object.position.y = idle ? Math.abs(Math.sin(wallTime * 38)) * 0.03 : 0;
+    this.object.position.y = this.hop + (idle ? Math.abs(Math.sin(wallTime * 38)) * 0.03 : 0);
     const braking = this.thinking || (this.drive && this.speed < 4);
     for (const tail of this.parts.tailLights) tail.material.color.copy(braking ? TAIL_BRAKE : TAIL_IDLE);
 

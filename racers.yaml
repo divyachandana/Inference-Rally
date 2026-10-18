@@ -33,6 +33,12 @@ qnn:
       max_seq_len: 7800  # compiled context is 8000
       prompt_suffix: " /no_think"  # Qwen3 otherwise reasons for hundreds of tokens first
 
+# Laya (laya_x_elite) on the NPU decides when the UNFAIR mode's rogue cheats. Its host code
+# needs torch + transformers, so it runs in that Python via scripts/laya_bridge.py.
+laya:
+  laya_dir: C:/Users/qc_de/Desktop/laya_x_elite
+  python: C:/dev/et-venv/Scripts/python.exe
+
 active_profile: demo
 
 profiles:
@@ -75,6 +81,26 @@ profiles:
       runtime: qnn
       color: "#3FA7D6"
       qnn_model: qwen
+
+  # UNFAIR mode: honest Gemma vs a rogue Qwen3 that may cheat. At each junction where a cheat
+  # would help (a hedge jump that saves 2+ blocks, or a drone when circling), Laya on the NPU
+  # answers "should it cheat now?" and the rogue cheats if Laya says yes with p >= threshold.
+  unfair:
+    - id: gemma
+      name: Gemma-4-E2B
+      label: GEMMA NPU
+      device: NPU
+      runtime: qnn
+      color: "#1D9E75"
+      qnn_model: gemma
+    - id: rogue
+      name: Qwen3-1.7B
+      label: ROGUE QWEN
+      device: NPU
+      runtime: qnn
+      color: "#E5484D"
+      qnn_model: qwen
+      rogue: {jumps: 3, drones: 2, threshold: 0.4, jump_penalty_s: 1.5, drone_time_s: 2.0}
 
   # Everything simulated: works on any machine, no NPU needed (UI work, tests). Speeds are
   # estimates from the measured NPU runs (~170 ms to first token, ~12-14 tokens/s alone).

@@ -29,13 +29,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from inference_rally import qnn_host
+from inference_rally import laya, qnn_host
 from inference_rally.config import AppConfig, build_decider, load_config
 from inference_rally.deciders import HumanDecider
 from inference_rally.errors import ConfigError
 from inference_rally.maze import Move, generate_maze
 from inference_rally.models import RaceEvent
-from inference_rally.race import RaceEngine
+from inference_rally.race import CheatJudge, RaceEngine
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,8 @@ class RaceController:
             for spec in self._config.racers(profile)
         ]
         self._humans = {spec.id: d for spec, d in racers if isinstance(d, HumanDecider)}
-        return RaceEngine(maze, racers, settings, self._hub.publish)
+        judge = _laya_judge(self._config) if any(s.rogue for s, _ in racers) else None
+        return RaceEngine(maze, racers, settings, self._hub.publish, judge)
 
     async def preview(self, profile: str | None = None) -> None:
         """Show a profile's maze and racers on the attract screen without racing."""
@@ -224,12 +225,19 @@ def create_app(config: AppConfig) -> Starlette:
         npu_loading.cancel()
         await controller.stop()  # don't leave a race task running after Ctrl+C
         await asyncio.to_thread(qnn_host.close_all)  # free the NPU
+        await asyncio.to_thread(laya.close_all)
 
     return Starlette(routes=routes, lifespan=lifespan)
 
 
 async def _prestart_npu_hosts(config: AppConfig) -> None:
     """Load the NPU models while the attract screen shows, so the first race starts fast."""
+    specs = [s for p in config.profiles.values() for s in p]
+    if config.laya is not None and any(s.rogue for s in specs):
+        try:
+            await asyncio.to_thread(laya.get_bridge(config.laya).start)
+        except laya.LayaError:
+            logger.warning("Laya did not start", exc_info=True)
     if config.qnn is None:
         return
     keys = {s.qnn_model for p in config.profiles.values() for s in p if s.runtime == "qnn"}
@@ -238,6 +246,18 @@ async def _prestart_npu_hosts(config: AppConfig) -> None:
             await asyncio.to_thread(qnn_host.get_host(config.qnn, key).start)
         except qnn_host.QnnHostError:
             logger.warning("NPU host for %s did not start", key, exc_info=True)
+
+
+def _laya_judge(config: AppConfig) -> CheatJudge | None:
+    """Laya's yes-probability for a cheat question, asked off the event loop."""
+    if config.laya is None:
+        return None
+    bridge = laya.get_bridge(config.laya)
+
+    async def judge(state: str, question: str) -> float:
+        return await asyncio.to_thread(bridge.noul, state, question)
+
+    return judge
 
 
 async def _json_body(request: Request) -> dict[str, object]:
@@ -259,7 +279,9 @@ def main() -> None:
     parser.add_argument("--profile", help="Override active_profile from racers.yaml")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     config = load_config()
     if args.profile:
         config = config.model_copy(update={"active_profile": args.profile})
