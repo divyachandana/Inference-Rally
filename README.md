@@ -1,3 +1,17 @@
+# Three on-device AI tools on a Snapdragon X Elite
+
+ExecuTorch Hackathon, Compute track. Everything here runs locally on a Copilot+ PC: no cloud.
+
+| Project | Real-world use | Folder |
+|---|---|---|
+| **Inference Rally** | Pick the right AI model and chip for robots, carts and drones by racing real models live on the NPU (ExecuTorch + Qualcomm); a rogue model that cheats tests how agents behave under pressure | this folder (root) |
+| **NightWatch** | Night safety for memory care: an on-device person detector sees a resident leave their room, and alerts keep escalating (staff → family and owner) until a human responds; works offline, no video recorded | [`nightwatch/`](nightwatch/) |
+| **Alibi Breaker** | Checks whether a statement is physically possible: local AI pulls places and times from answers, plain code checks them against a real street map and evidence (insurance claims, investigations) | [`alibi-breaker/`](alibi-breaker/) |
+
+Each project keeps its own README and run instructions in its folder.
+
+---
+
 # Inference Rally
 
 > On-device AI models race taxis through a 3D maze. Every turn is a decision; every second is compute.
